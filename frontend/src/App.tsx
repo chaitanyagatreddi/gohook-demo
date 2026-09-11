@@ -141,9 +141,40 @@ export default function App() {
     localStorage.setItem('redditscan_board', JSON.stringify(board))
   }, [board])
 
-  // "Ask Reddit" chat: each turn keeps its answer + the threads it cited
-  const [turns, setTurns] = useState<AskTurn[]>([])
+  // "Ask Reddit" history: newest search first; each search is a question + its follow-ups.
+  // Kept on this device so earlier searches survive a reload and can still be sent to the Board.
+  const [searches, setSearches] = useState<AskTurn[][]>(() => {
+    try {
+      const raw = localStorage.getItem('gohook_searches')
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('gohook_searches', JSON.stringify(searches.slice(0, 20)))
+    } catch { /* storage full or blocked */ }
+  }, [searches])
+  const turns = searches[0] ?? []
   const [followUp, setFollowUp] = useState('')
+
+  function addQuestionToBoard(turn: AskTurn) {
+    const id = `ask::${turn.question}::${turn.answer.slice(0, 40)}`
+    setBoard(prev => (prev.some(c => c.id === id) ? prev : [
+      ...prev,
+      {
+        id,
+        title: turn.question,
+        text: turn.answer.replace(/\*\*/g, ''),
+        source_url: turn.sources[0]?.url ?? '',
+        subreddit: `${turn.sources.length} threads`,
+        reddit_score: 0,
+        origin: 'question',
+        column: 'new',
+      },
+    ]))
+  }
 
   function addToBoard(item: ResultItem, origin: string) {
     const id = `${item.source_url}::${item.text.slice(0, 40)}`
@@ -351,7 +382,7 @@ export default function App() {
     setError('')
     try {
       const turn = await askReddit(q, turns)
-      setTurns(prev => [...prev, turn])
+      setSearches(prev => [[...(prev[0] ?? []), turn], ...prev.slice(1)])
       setFollowUp('')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
@@ -368,13 +399,13 @@ export default function App() {
     }
     setLoading(true)
     setError('')
-    if (!expand) {
-      setIntel(null)
-      setTurns([])
-    }
+    if (!expand) setIntel(null)
     try {
-      // Any question gets a cited answer; comparisons also get the 5 tabs
-      if (!expand) setTurns([await askReddit(q, [])])
+      // Any question gets a cited answer (added on top of earlier searches); comparisons also get the 5 tabs
+      if (!expand) {
+        const turn = await askReddit(q, [])
+        setSearches(prev => [[turn], ...prev].slice(0, 20))
+      }
       if (expand || COMPARISON_PATTERN.test(q)) {
         const res = await fetch(`${API}/search`, {
           method: 'POST',
@@ -587,7 +618,7 @@ export default function App() {
       ) : (
       <div className="max-w-3xl mx-auto px-4 py-10">
         {/* Hero + search bar */}
-        {!intel && !loading && turns.length === 0 && view === 'results' && (
+        {!intel && !loading && searches.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
               Reddit signal.<br />
@@ -622,7 +653,7 @@ export default function App() {
         {view === 'results' && error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 
         {/* Loading skeleton */}
-        {view === 'results' && loading && turns.length === 0 && (
+        {view === 'results' && loading && searches.length === 0 && (
           <div className="mt-8 space-y-3 animate-pulse">
             <div className="h-14 rounded-xl bg-[#14171c] border border-[#242a33]" />
             {[0, 1, 2].map(i => (
@@ -746,12 +777,34 @@ export default function App() {
         )}
 
         {/* Ask Reddit answers: cited answer + sources per turn, then follow-up box */}
-        {view === 'results' && turns.length > 0 && (
+        {view === 'results' && searches.length > 0 && (
           <div className="mt-8 space-y-6">
-            {turns.map((turn, ti) => (
+            {searches.map((search, si) => (
+            <div key={si} className="space-y-4">
+            {si === 1 && (
+              <p className="pt-4 border-t border-[#242a33] text-xs uppercase tracking-wide text-[#6b7280]">Earlier searches</p>
+            )}
+            {search.map((turn, ti) => (
               <div key={ti} className="border border-[#242a33] bg-[#14171c] rounded-xl p-5">
-                <p className="text-xs text-[#6b7280] mb-1">You asked</p>
-                <p className="text-[#e8eaed] font-semibold">{turn.question}</p>
+                <div className="flex items-start gap-3">
+                  <div className="flex-1">
+                    <p className="text-xs text-[#6b7280] mb-1">{ti === 0 ? 'You asked' : 'Follow-up'}</p>
+                    <p className="text-[#e8eaed] font-semibold">{turn.question}</p>
+                  </div>
+                  {(() => {
+                    const onBoard = boardIds.has(`ask::${turn.question}::${turn.answer.slice(0, 40)}`)
+                    return (
+                      <button
+                        onClick={() => addQuestionToBoard(turn)}
+                        disabled={onBoard}
+                        className="shrink-0 text-xs border border-[#242a33] rounded-md px-2.5 py-1 text-[#9aa4b2] hover:text-[#ff6a33] hover:border-[#ff4500]/50 disabled:text-[#50c878] disabled:border-[#50c878]/40"
+                        title={onBoard ? 'This question is on the board' : 'Save question + answer to the board'}
+                      >
+                        {onBoard ? '✓ Board' : '+ Board'}
+                      </button>
+                    )
+                  })()}
+                </div>
                 <p className="mt-4 text-sm text-[#e8eaed] leading-relaxed whitespace-pre-wrap">
                   {renderAnswer(turn.answer, turn.sources)}
                 </p>
@@ -790,6 +843,7 @@ export default function App() {
                 </details>
               </div>
             ))}
+            {si === 0 && (
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
@@ -807,6 +861,9 @@ export default function App() {
                 {loading ? 'Thinking…' : 'Ask'}
               </button>
             </div>
+            )}
+            </div>
+            ))}
           </div>
         )}
 

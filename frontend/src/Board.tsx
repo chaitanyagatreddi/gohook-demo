@@ -4,6 +4,7 @@ export type BoardColumn = 'new' | 'reviewing' | 'actioned'
 
 export type BoardCard = {
   id: string
+  title?: string
   text: string
   source_url: string
   subreddit: string
@@ -25,6 +26,7 @@ const ORIGIN_BADGE: Record<string, string> = {
   comparisons: 'bg-[#7a9bff]/15 text-[#7a9bff]',
   praise: 'bg-[#e879f9]/15 text-[#e879f9]',
   quotes: 'bg-[#9aa4b2]/15 text-[#9aa4b2]',
+  question: 'bg-[#ffb020]/15 text-[#ffb020]',
 }
 
 export default function Board({
@@ -96,6 +98,7 @@ export default function Board({
                     dragId === card.id ? 'opacity-50' : ''
                   }`}
                 >
+                  {card.title && <p className="text-[13px] font-semibold text-[#e8eaed] mb-1">{card.title}</p>}
                   <p className="text-[13px] text-[#e8eaed] leading-snug line-clamp-4">{card.text}</p>
                   <div className="mt-2 flex items-center gap-2 text-[11px] text-[#9aa4b2]">
                     <span>{card.subreddit}</span>
