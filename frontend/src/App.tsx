@@ -456,46 +456,44 @@ export default function App() {
   const activeResults = intel ? intel[activeTab] : []
 
   return (
-    <div className="min-h-screen bg-[#0b0d10] text-[#e8eaed]">
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-[#0b0d10]/80 backdrop-blur border-b border-[#242a33]">
-        <div className="max-w-3xl mx-auto px-4 h-16 flex items-center gap-3">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#ff4500]" />
-          <h1 className="text-lg font-bold tracking-tight">GoHook</h1>
-          <p className="hidden md:block text-sm text-[#9aa4b2] ml-1">
-            Reddit, focus mode: pricing, complaints, comparisons, no noise.
-          </p>
-          {!(showAuthGate && !session) && (
-            <div className="ml-auto flex gap-1 bg-[#14171c] border border-[#242a33] rounded-lg p-1">
-              <button
-                onClick={() => setView('results')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'results' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-              >
-                Results
-              </button>
-              <button
-                onClick={() => setView('board')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'board' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-              >
-                🗂 Board {board.length > 0 && <span className="opacity-80">({board.length})</span>}
-              </button>
-              <button
-                onClick={() => setView('questions')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'questions' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-              >
-                Questions
-              </button>
-              <button
-                onClick={() => setView('settings')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'settings' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-              >
-                ⚙️ Settings
-              </button>
+    <div className="min-h-screen bg-[#0b0d10] text-[#e8eaed] flex items-start">
+      {/* Left rail. Layout borrowed from GTM Predictor; GoHook colours. */}
+      {!(showAuthGate && !session) && (
+        <aside className="sticky top-0 h-screen flex-none w-16 md:w-60 flex flex-col bg-[#14171c] border-r border-[#242a33] py-5">
+          <div className="px-0 md:px-5 mb-6 flex flex-col items-center md:items-start">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#ff4500]" />
+              <h1 className="hidden md:block text-lg font-bold tracking-tight">GoHook</h1>
             </div>
-          )}
-        </div>
-      </div>
+            <p className="hidden md:block text-xs text-[#9aa4b2] mt-2 leading-snug">
+              Reddit, focus mode: pricing, complaints, comparisons, no noise.
+            </p>
+          </div>
+          <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-col gap-1">
+            {([
+              { key: 'results', label: 'Results', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
+              { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
+              { key: 'questions', label: 'Questions', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></> },
+              { key: 'settings', label: 'Settings', icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></> },
+            ] as const).map(item => (
+              <button
+                key={item.key}
+                onClick={() => setView(item.key)}
+                title={item.label}
+                className={`flex items-center justify-center md:justify-start gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${view === item.key ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed] hover:bg-[#242a33]'}`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="w-[18px] h-[18px] flex-none">{item.icon}</svg>
+                <span className="hidden md:inline">
+                  {item.label}
+                  {item.key === 'board' && board.length > 0 && <span className="opacity-80"> ({board.length})</span>}
+                </span>
+              </button>
+            ))}
+          </nav>
+        </aside>
+      )}
 
+      <main className="flex-1 min-w-0">
       {showAuthGate && !session ? (
         <div className="max-w-3xl mx-auto px-4 py-10">
           {gateLoading ? (
@@ -536,14 +534,14 @@ export default function App() {
           </div>
         )}
 
-        {view === 'results' && <div className="flex gap-2">
+        {view === 'results' && <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && doSearch(query)}
             placeholder="Enter a product name (e.g. Notion, Linear, Salesforce)"
-            className="flex-1 bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+            className="flex-1 min-w-0 bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
           />
           <button
             onClick={() => doSearch(query)}
@@ -1057,6 +1055,7 @@ export default function App() {
         )}
       </div>
       )}
+      </main>
     </div>
   )
 }
