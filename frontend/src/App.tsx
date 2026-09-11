@@ -91,12 +91,15 @@ type AskSource = {
 }
 type AskTurn = { question: string; answer: string; queries_used: string[]; sources: AskSource[] }
 
-// Turn "[3]" citations into links to the matching Reddit thread
+// Turn "[3]" citations into links to the matching Reddit thread, and "**x**" into bold
 function renderAnswer(answer: string, sources: AskSource[]) {
-  return answer.split(/(\[\d+\])/g).map((part, i) => {
+  return answer.split(/(\[\d+\]|\*\*[^*]+\*\*)/g).map((part, i) => {
+    if (/^\*\*[^*]+\*\*$/.test(part)) {
+      return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
+    }
     const m = part.match(/^\[(\d+)\]$/)
     const src = m && sources.find(s => s.n === Number(m[1]))
-    if (!src) return <span key={i}>{part}</span>
+    if (!src) return <span key={i}>{part.replace(/^#+\s*/gm, '')}</span>
     return (
       <a key={i} href={src.url} target="_blank" rel="noopener noreferrer" className="text-[#ff6a33] hover:underline" title={src.title}>
         {part}
