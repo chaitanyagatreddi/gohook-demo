@@ -2,9 +2,10 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from crawler import crawl_reddit
+from fastapi.concurrency import run_in_threadpool
+from crawler import crawl_reddit, search_many
 from extractors import extract_intel
-from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer
+from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads
 import os, re, httpx, logging
 from fastapi import Header, Depends
 from dotenv import load_dotenv
@@ -152,11 +153,6 @@ async def new_user_webhook(payload: dict, x_webhook_secret: Optional[str] = Head
 async def search(req: SearchRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
-    if not COMPARISON_PATTERN.search(req.query):
-        raise HTTPException(
-            status_code=400,
-            detail="Enter a comparison like 'Notion vs Asana' — Redditscan only scans head-to-head comparisons.",
-        )
 
     posts = await crawl_reddit(req.query, req.subreddits, expand=req.expand)
 
@@ -170,6 +166,57 @@ async def search(req: SearchRequest):
     intel["expanded"] = req.expand
 
     return intel
+
+
+class AskRequest(BaseModel):
+    question: str
+    history: List[dict] = []  # prior turns: [{role, content}]
+    sources: List[dict] = []  # threads from earlier turns, reused on follow-ups
+
+
+@app.post("/ask")
+async def ask(req: AskRequest):
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    try:
+        plan = await run_in_threadpool(plan_queries, req.question)
+        fresh = await search_many(plan["queries"], limit=20)
+
+        # Earlier threads first so their [n] numbers stay stable across follow-ups
+        threads, seen = [], set()
+        for t in req.sources + fresh:
+            key = (t.get("permalink") or t.get("url", "")).split("?")[0].rstrip("/")
+            if key and key not in seen:
+                seen.add(key)
+                threads.append(t)
+        threads = threads[:20]
+
+        if not threads:
+            raise HTTPException(status_code=404, detail="No Reddit threads found for that question. Try rephrasing.")
+
+        answer = await run_in_threadpool(answer_from_threads, req.question, threads, req.history)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Ask failed")
+        raise HTTPException(status_code=500, detail="Could not answer that. Please try again.")
+
+    return {
+        "answer": answer,
+        "intent": plan["intent"],
+        "queries_used": plan["queries"],
+        "sources": [
+            {
+                "n": i,
+                "title": t.get("title", ""),
+                "subreddit_name_prefixed": t.get("subreddit_name_prefixed", ""),
+                "selftext": t.get("selftext", ""),
+                "permalink": t.get("permalink", ""),
+                "url": t.get("url", ""),
+            }
+            for i, t in enumerate(threads, 1)
+        ],
+    }
 
 
 class DraftRequest(BaseModel):

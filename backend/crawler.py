@@ -60,6 +60,28 @@ EXPAND_QUERIES = [
 ]
 
 
+async def search_many(queries: list[str], limit: int = 20) -> list[dict]:
+    """Run several Reddit searches in parallel, dedupe by permalink, cap at limit."""
+    import asyncio
+
+    async with httpx.AsyncClient() as client:
+        results = await asyncio.gather(
+            *(search_reddit(client, q) for q in queries if q.strip()),
+            return_exceptions=True,
+        )
+
+    posts, seen = [], set()
+    for batch in results:
+        if isinstance(batch, Exception):
+            continue
+        for p in batch:
+            key = p["permalink"].split("?")[0].split("#")[0].rstrip("/")
+            if key not in seen:
+                seen.add(key)
+                posts.append(p)
+    return posts[:limit]
+
+
 async def crawl_reddit(query: str, subreddits: list[str], expand: bool = False) -> list[dict]:
     all_posts = []
     seen_urls = set()

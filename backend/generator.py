@@ -187,6 +187,69 @@ def generate_question_answer(brief: str, question: str) -> dict:
     return {"answer": answer}
 
 
+PLAN_QUERIES_SYSTEM_PROMPT = """You turn a user's question into Google searches that find relevant Reddit threads.
+
+Return JSON: {"queries": [3 to 5 short search strings], "intent": one of "comparison", "pain", "recommendation", "pricing", "general"}
+
+Rules:
+- Each query is 2-8 words, keyword style, no question marks
+- Do not add the word "reddit" (it is added later)
+- Cover different angles of the question, not rewordings of the same words
+- intent is "comparison" only when the user compares named products (X vs Y)"""
+
+
+ANSWER_SYSTEM_PROMPT = """You answer questions using ONLY the Reddit threads provided.
+
+Rules:
+- Every factual claim must cite its source thread as [n], using the numbers given
+- If the threads do not contain enough to answer, say so plainly and say what is missing. Never fill gaps from your own knowledge.
+- Plain, direct language. Short paragraphs or a short list. 60-200 words.
+- Report what Reddit users say, with their tone (e.g. "several users complain…", "one user switched because…")
+- No preamble, no closing summary, no markdown headings"""
+
+
+def plan_queries(question: str) -> dict:
+    """Turn a free-form question into Reddit search queries."""
+    resp = get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": PLAN_QUERIES_SYSTEM_PROMPT},
+            {"role": "user", "content": question.strip()},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.3,
+        max_tokens=300,
+    )
+    payload = json.loads(resp.choices[0].message.content)
+    queries = [q.strip() for q in payload.get("queries", []) if isinstance(q, str) and q.strip()][:5]
+    if not queries:
+        queries = [question.strip()]
+    return {"queries": queries, "intent": payload.get("intent", "general")}
+
+
+def answer_from_threads(question: str, threads: List[dict], history: Optional[List[dict]] = None) -> str:
+    """Answer a question strictly from the given threads, citing them as [n]."""
+    sources = "\n\n".join(
+        f"[{i}] {t.get('subreddit_name_prefixed', '')} — {t.get('title', '')}\n{t.get('selftext', '')}"
+        for i, t in enumerate(threads, 1)
+    )
+    messages = [{"role": "system", "content": ANSWER_SYSTEM_PROMPT}]
+    for turn in (history or [])[-6:]:
+        if turn.get("role") in ("user", "assistant") and turn.get("content"):
+            messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": f"Reddit threads:\n\n{sources}\n\nQuestion: {question.strip()}"})
+    resp = get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.3,
+        max_tokens=500,
+    )
+    answer = resp.choices[0].message.content.strip()
+    if not answer:
+        raise ValueError("Answer was empty")
+    return answer
+
+
 def detect_tone(text: str) -> str:
     """Cheap heuristic tone detector — no LLM call."""
     t = text.lower()

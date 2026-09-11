@@ -81,6 +81,30 @@ function ResultCard({ item, onReply, onAdd, added }: { item: ResultItem; onReply
   )
 }
 
+type AskSource = {
+  n: number
+  title: string
+  subreddit_name_prefixed: string
+  selftext: string
+  permalink: string
+  url: string
+}
+type AskTurn = { question: string; answer: string; queries_used: string[]; sources: AskSource[] }
+
+// Turn "[3]" citations into links to the matching Reddit thread
+function renderAnswer(answer: string, sources: AskSource[]) {
+  return answer.split(/(\[\d+\])/g).map((part, i) => {
+    const m = part.match(/^\[(\d+)\]$/)
+    const src = m && sources.find(s => s.n === Number(m[1]))
+    if (!src) return <span key={i}>{part}</span>
+    return (
+      <a key={i} href={src.url} target="_blank" rel="noopener noreferrer" className="text-[#ff6a33] hover:underline" title={src.title}>
+        {part}
+      </a>
+    )
+  })
+}
+
 type Draft = { draft: string; word_count: number; tone: string }
 type QuestionAnswer = { question: string; answer?: string }
 
@@ -114,7 +138,11 @@ export default function App() {
     localStorage.setItem('redditscan_board', JSON.stringify(board))
   }, [board])
 
-  function addToBoard(item: ResultItem, origin: Tab) {
+  // "Ask Reddit" chat: each turn keeps its answer + the threads it cited
+  const [turns, setTurns] = useState<AskTurn[]>([])
+  const [followUp, setFollowUp] = useState('')
+
+  function addToBoard(item: ResultItem, origin: string) {
     const id = `${item.source_url}::${item.text.slice(0, 40)}`
     setBoard(prev => (prev.some(c => c.id === id) ? prev : [
       ...prev,
@@ -295,31 +323,67 @@ export default function App() {
   const [showAuthGate, setShowAuthGate] = useState(false)
   const [gateLoading, setGateLoading] = useState(true)
 
+  async function askReddit(question: string, prior: AskTurn[]): Promise<AskTurn> {
+    const history = prior.flatMap(t => [
+      { role: 'user', content: t.question },
+      { role: 'assistant', content: t.answer },
+    ])
+    const res = await fetch(`${API}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, history, sources: prior.at(-1)?.sources ?? [] }),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.detail || 'Could not answer that')
+    }
+    const data = await res.json()
+    return { question, answer: data.answer, queries_used: data.queries_used, sources: data.sources }
+  }
+
+  async function doFollowUp() {
+    const q = followUp.trim()
+    if (!q || loading) return
+    setLoading(true)
+    setError('')
+    try {
+      const turn = await askReddit(q, turns)
+      setTurns(prev => [...prev, turn])
+      setFollowUp('')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function doSearch(q: string, expand = false) {
     if (!q.trim()) return
     if (!session && searchCount >= FREE_SEARCH_LIMIT) {
       setShowAuthGate(true)
       return
     }
-    if (!COMPARISON_PATTERN.test(q)) {
-      setError("Enter a comparison like 'Notion vs Asana' — GoHook only scans head-to-head comparisons.")
-      return
-    }
     setLoading(true)
     setError('')
-    if (!expand) setIntel(null)
+    if (!expand) {
+      setIntel(null)
+      setTurns([])
+    }
     try {
-      const res = await fetch(`${API}/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q, expand }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Search failed')
+      // Any question gets a cited answer; comparisons also get the 5 tabs
+      if (!expand) setTurns([await askReddit(q, [])])
+      if (expand || COMPARISON_PATTERN.test(q)) {
+        const res = await fetch(`${API}/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q, expand }),
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.detail || 'Search failed')
+        }
+        setIntel(await res.json())
       }
-      const data = await res.json()
-      setIntel(data)
       window.history.replaceState({}, '', `?q=${encodeURIComponent(q)}`)
       if (!session) {
         setSearchCount(prev => {
@@ -520,7 +584,7 @@ export default function App() {
       ) : (
       <div className="max-w-3xl mx-auto px-4 py-10">
         {/* Hero + search bar */}
-        {!intel && !loading && view === 'results' && (
+        {!intel && !loading && turns.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
               Reddit signal.<br />
@@ -540,7 +604,7 @@ export default function App() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && doSearch(query)}
-            placeholder="Enter a product name (e.g. Notion, Linear, Salesforce)"
+            placeholder="Ask anything about Reddit (e.g. what do founders hate about HubSpot?)"
             className="flex-1 min-w-0 bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
           />
           <button
@@ -555,7 +619,7 @@ export default function App() {
         {view === 'results' && error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 
         {/* Loading skeleton */}
-        {view === 'results' && loading && (
+        {view === 'results' && loading && turns.length === 0 && (
           <div className="mt-8 space-y-3 animate-pulse">
             <div className="h-14 rounded-xl bg-[#14171c] border border-[#242a33]" />
             {[0, 1, 2].map(i => (
@@ -674,6 +738,71 @@ export default function App() {
               ) : (
                 <p className="text-xs text-[#9aa4b2]">Zernio is connected — you can schedule posts to Reddit.</p>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Ask Reddit answers: cited answer + sources per turn, then follow-up box */}
+        {view === 'results' && turns.length > 0 && (
+          <div className="mt-8 space-y-6">
+            {turns.map((turn, ti) => (
+              <div key={ti} className="border border-[#242a33] bg-[#14171c] rounded-xl p-5">
+                <p className="text-xs text-[#6b7280] mb-1">You asked</p>
+                <p className="text-[#e8eaed] font-semibold">{turn.question}</p>
+                <p className="mt-4 text-sm text-[#e8eaed] leading-relaxed whitespace-pre-wrap">
+                  {renderAnswer(turn.answer, turn.sources)}
+                </p>
+                <p className="mt-4 text-xs text-[#6b7280]">
+                  Searched: {turn.queries_used.join(' · ')}
+                </p>
+                <details className="mt-3">
+                  <summary className="text-xs text-[#9aa4b2] cursor-pointer hover:text-[#e8eaed]">
+                    {turn.sources.length} Reddit threads
+                  </summary>
+                  <div className="mt-3 space-y-2">
+                    {turn.sources.map(s => {
+                      const item: ResultItem = {
+                        text: s.title,
+                        source_url: s.url,
+                        reddit_score: 0,
+                        subreddit: s.subreddit_name_prefixed,
+                      }
+                      return (
+                        <div key={s.n} className="flex items-start gap-3 text-sm">
+                          <span className="text-[#ff6a33] shrink-0">[{s.n}]</span>
+                          <a href={s.url} target="_blank" rel="noopener noreferrer" className="flex-1 text-[#e8eaed] hover:underline">
+                            {s.title} <span className="text-[#6b7280] text-xs">{s.subreddit_name_prefixed}</span>
+                          </a>
+                          <button
+                            onClick={() => addToBoard(item, 'ask')}
+                            disabled={boardIds.has(`${item.source_url}::${item.text.slice(0, 40)}`)}
+                            className="text-xs text-[#9aa4b2] hover:text-[#ff6a33] disabled:text-[#50c878] shrink-0"
+                          >
+                            {boardIds.has(`${item.source_url}::${item.text.slice(0, 40)}`) ? '✓ Board' : '+ Board'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </details>
+              </div>
+            ))}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={followUp}
+                onChange={e => setFollowUp(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && doFollowUp()}
+                placeholder="Ask a follow-up…"
+                className="flex-1 min-w-0 bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+              />
+              <button
+                onClick={doFollowUp}
+                disabled={loading}
+                className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-6 py-3 rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {loading ? 'Thinking…' : 'Ask'}
+              </button>
             </div>
           </div>
         )}
