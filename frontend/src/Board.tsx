@@ -30,9 +30,11 @@ const ORIGIN_BADGE: Record<string, string> = {
 export default function Board({
   board,
   setBoard,
+  onGoToResults,
 }: {
   board: BoardCard[]
   setBoard: (updater: (prev: BoardCard[]) => BoardCard[]) => void
+  onGoToResults?: () => void
 }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overCol, setOverCol] = useState<BoardColumn | null>(null)
@@ -50,7 +52,7 @@ export default function Board({
       <div className="mt-8 text-center py-16 border border-dashed border-[#242a33] rounded-xl">
         <p className="text-[#9aa4b2] text-sm">No signals on the board yet.</p>
         <p className="text-[#6b7280] text-xs mt-1">
-          Scan a product, then hit <span className="text-[#ff6a33]">+ Board</span> on any result to triage it here.
+          Scan a product, then hit <button onClick={onGoToResults} className="text-[#ff6a33] hover:underline">+ Board</button> on any result to triage it here.
         </p>
       </div>
     )

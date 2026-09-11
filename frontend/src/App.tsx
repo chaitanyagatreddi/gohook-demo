@@ -564,7 +564,7 @@ export default function App() {
           </div>
         )}
 
-        {view === 'board' && <Board board={board} setBoard={setBoard} />}
+        {view === 'board' && <Board board={board} setBoard={setBoard} onGoToResults={() => setView('results')} />}
 
         {view === 'questions' && (
           <div>
