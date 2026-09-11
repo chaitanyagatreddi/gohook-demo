@@ -82,6 +82,7 @@ function ResultCard({ item, onReply, onAdd, added }: { item: ResultItem; onReply
 }
 
 type Draft = { draft: string; word_count: number; tone: string }
+type QuestionAnswer = { question: string; answer: string }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
   pricing: { icon: '💰', label: 'Pricing' },
@@ -100,7 +101,7 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
-  const [view, setView] = useState<'results' | 'board' | 'settings'>('results')
+  const [view, setView] = useState<'results' | 'questions' | 'board' | 'settings'>('results')
   const [board, setBoard] = useState<BoardCard[]>(() => {
     try {
       const raw = localStorage.getItem('redditscan_board')
@@ -141,6 +142,36 @@ export default function App() {
   const [draftError, setDraftError] = useState('')
   const [draftCopied, setDraftCopied] = useState(false)
   const [draftPlatform, setDraftPlatform] = useState<'reddit' | 'hn' | 'pg'>('reddit')
+
+  // Batch questions state
+  const [questionBrief, setQuestionBrief] = useState('')
+  const [questionBatch, setQuestionBatch] = useState<QuestionAnswer[]>([])
+  const [questionBatchLoading, setQuestionBatchLoading] = useState(false)
+  const [questionBatchError, setQuestionBatchError] = useState('')
+
+  async function generateQuestionBatch() {
+    if (!questionBrief.trim()) return
+    setQuestionBatchLoading(true)
+    setQuestionBatchError('')
+    setQuestionBatch([])
+    try {
+      const res = await fetch(`${API}/question-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brief: questionBrief }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Question batch failed')
+      }
+      const data = await res.json()
+      setQuestionBatch(data.items)
+    } catch (e: unknown) {
+      setQuestionBatchError(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      setQuestionBatchLoading(false)
+    }
+  }
 
   // Schedule state
   const [scheduling, setScheduling] = useState(false)
@@ -249,7 +280,7 @@ export default function App() {
     const raw = localStorage.getItem('redditscan_search_count')
     return raw ? parseInt(raw, 10) || 0 : 0
   })
-  const [showAuthGate, setShowAuthGate] = useState(true) // TEMP: forced true for preview, revert to false
+  const [showAuthGate, setShowAuthGate] = useState(false)
   const [gateLoading, setGateLoading] = useState(true)
 
   async function doSearch(q: string, expand = false) {
@@ -437,6 +468,12 @@ export default function App() {
                 🗂 Board {board.length > 0 && <span className="opacity-80">({board.length})</span>}
               </button>
               <button
+                onClick={() => setView('questions')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'questions' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
+              >
+                Questions
+              </button>
+              <button
                 onClick={() => setView('settings')}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'settings' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
               >
@@ -487,7 +524,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="flex gap-2">
+        {view === 'results' && <div className="flex gap-2">
           <input
             type="text"
             value={query}
@@ -503,12 +540,12 @@ export default function App() {
           >
             {loading ? 'Scanning…' : 'Scan Reddit'}
           </button>
-        </div>
+        </div>}
 
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        {view === 'results' && error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 
         {/* Loading skeleton */}
-        {loading && (
+        {view === 'results' && loading && (
           <div className="mt-8 space-y-3 animate-pulse">
             <div className="h-14 rounded-xl bg-[#14171c] border border-[#242a33]" />
             {[0, 1, 2].map(i => (
@@ -518,6 +555,45 @@ export default function App() {
         )}
 
         {view === 'board' && <Board board={board} setBoard={setBoard} />}
+
+        {view === 'questions' && (
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Batch questions</h2>
+            <p className="text-sm text-[#9aa4b2] mt-2">Describe what you are exploring in three lines. Get five questions with individual draft answers.</p>
+            <textarea
+              value={questionBrief}
+              onChange={e => setQuestionBrief(e.target.value)}
+              rows={3}
+              placeholder="Describe the product, audience, and what you want to understand."
+              className="mt-5 w-full bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
+            />
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={generateQuestionBatch}
+                disabled={questionBatchLoading || !questionBrief.trim()}
+                className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-colors"
+              >
+                {questionBatchLoading ? 'Generating…' : 'Generate 5 questions'}
+              </button>
+            </div>
+            {questionBatchError && <p className="mt-3 text-sm text-red-400">{questionBatchError}</p>}
+            {questionBatch.length > 0 && (
+              <div className="mt-7 space-y-3">
+                {questionBatch.map((item, index) => (
+                  <article key={`${index}-${item.question}`} className="border border-[#242a33] bg-[#14171c] rounded-xl p-5">
+                    <div className="flex gap-3">
+                      <span className="text-xs text-[#ff6a33] font-mono pt-1">0{index + 1}</span>
+                      <div>
+                        <h3 className="text-base font-semibold text-[#e8eaed]">{item.question}</h3>
+                        <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{item.answer}</p>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {view === 'settings' && (
           <div className="max-w-md">

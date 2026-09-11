@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from crawler import crawl_reddit
 from extractors import extract_intel
-from generator import draft_post, draft_comment
+from generator import draft_post, draft_comment, generate_question_batch
 import os, re, httpx, logging
 from fastapi import Header, Depends
 from dotenv import load_dotenv
@@ -118,7 +118,7 @@ app = FastAPI(title="Redditscan API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://redditscan.vercel.app"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://redditscan.vercel.app"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -176,6 +176,21 @@ class DraftRequest(BaseModel):
     idea: str
     context_snippets: Optional[List[str]] = None
     style: str = "reddit"  # "reddit" | "hn" | "pg"
+
+
+class QuestionBatchRequest(BaseModel):
+    brief: str
+
+
+@app.post("/question-batch")
+def question_batch(req: QuestionBatchRequest):
+    if not req.brief.strip():
+        raise HTTPException(status_code=400, detail="Brief cannot be empty")
+    try:
+        return generate_question_batch(req.brief)
+    except Exception:
+        logger.exception("Question batch generation failed")
+        raise HTTPException(status_code=500, detail="Question batch generation failed. Please try again.")
 
 
 @app.post("/draft")

@@ -106,9 +106,9 @@ const OnboardingDeck = ({
         connectZernio()
     }
 
-    const [oauthPending, setOauthPending] = useState<'google' | 'linkedin_oidc' | null>(null)
+    const [oauthPending, setOauthPending] = useState<'google' | null>(null)
 
-    const handleOAuthClick = (provider: 'google' | 'linkedin_oidc') => async (e?: MouseEvent) => {
+    const handleOAuthClick = (provider: 'google') => async (e?: MouseEvent) => {
         e?.stopPropagation()
         setOauthPending(provider)
         await supabase.auth.signInWithOAuth({ provider })
@@ -272,24 +272,6 @@ const OnboardingDeck = ({
                                                         />
                                                     ) : (
                                                         'Continue with Google'
-                                                    )}
-                                                </motion.button>
-                                                <motion.button
-                                                    type="button"
-                                                    whileTap={{ scale: 0.96 }}
-                                                    whileHover={{ y: -1 }}
-                                                    onClick={handleOAuthClick('linkedin_oidc')}
-                                                    disabled={oauthPending !== null}
-                                                    className="w-full flex items-center justify-center gap-2 bg-[#0a66c2] text-white font-medium text-[15px] py-3 px-4 rounded-lg shadow-md border border-[#0a66c2] hover:bg-[#0958a8] transition disabled:opacity-60"
-                                                >
-                                                    {oauthPending === 'linkedin_oidc' ? (
-                                                        <motion.span
-                                                            className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white"
-                                                            animate={{ rotate: 360 }}
-                                                            transition={{ repeat: Infinity, duration: 0.6, ease: 'linear' }}
-                                                        />
-                                                    ) : (
-                                                        'Continue with LinkedIn'
                                                     )}
                                                 </motion.button>
                                             </div>
