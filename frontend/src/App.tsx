@@ -82,7 +82,7 @@ function ResultCard({ item, onReply, onAdd, added }: { item: ResultItem; onReply
 }
 
 type Draft = { draft: string; word_count: number; tone: string }
-type QuestionAnswer = { question: string; answer: string }
+type QuestionAnswer = { question: string; answer?: string }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
   pricing: { icon: '💰', label: 'Pricing' },
@@ -146,30 +146,42 @@ export default function App() {
   // Batch questions state
   const [questionBrief, setQuestionBrief] = useState('')
   const [questionBatch, setQuestionBatch] = useState<QuestionAnswer[]>([])
-  const [questionBatchLoading, setQuestionBatchLoading] = useState(false)
   const [questionBatchError, setQuestionBatchError] = useState('')
+  const [answeringIndex, setAnsweringIndex] = useState<number | null>(null)
+  const [answerErrors, setAnswerErrors] = useState<Record<number, string>>({})
 
-  async function generateQuestionBatch() {
-    if (!questionBrief.trim()) return
-    setQuestionBatchLoading(true)
+  function createQuestionBatch() {
+    const questions = questionBrief.split('\n').map(question => question.trim()).filter(Boolean)
     setQuestionBatchError('')
-    setQuestionBatch([])
+    if (questions.length < 2 || questions.length > 3) {
+      setQuestionBatchError('Enter 2 or 3 questions, one per line.')
+      return
+    }
+    setAnswerErrors({})
+    setQuestionBatch(questions.map(question => ({ question })))
+  }
+
+  async function generateAnswer(index: number) {
+    const item = questionBatch[index]
+    if (!item) return
+    setAnsweringIndex(index)
+    setAnswerErrors(prev => ({ ...prev, [index]: '' }))
     try {
-      const res = await fetch(`${API}/question-batch`, {
+      const res = await fetch(`${API}/question-answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brief: questionBrief }),
+        body: JSON.stringify({ question: item.question }),
       })
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.detail || 'Question batch failed')
+        throw new Error(err.detail || 'Answer generation failed')
       }
       const data = await res.json()
-      setQuestionBatch(data.items)
+      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer } : entry))
     } catch (e: unknown) {
-      setQuestionBatchError(e instanceof Error ? e.message : 'Something went wrong')
+      setAnswerErrors(prev => ({ ...prev, [index]: e instanceof Error ? e.message : 'Something went wrong' }))
     } finally {
-      setQuestionBatchLoading(false)
+      setAnsweringIndex(null)
     }
   }
 
@@ -559,21 +571,21 @@ export default function App() {
         {view === 'questions' && (
           <div>
             <h2 className="text-2xl font-bold tracking-tight">Batch questions</h2>
-            <p className="text-sm text-[#9aa4b2] mt-2">Describe what you are exploring in three lines. Get five questions with individual draft answers.</p>
+            <p className="text-sm text-[#9aa4b2] mt-2">Enter 2 or 3 questions, one per line. Generate each answer individually.</p>
             <textarea
               value={questionBrief}
               onChange={e => setQuestionBrief(e.target.value)}
               rows={3}
-              placeholder="Describe the product, audience, and what you want to understand."
+              placeholder={'What problem are users trying to solve?\nWhat alternatives do they compare?\nWhat makes them switch?'}
               className="mt-5 w-full bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
             />
             <div className="mt-3 flex justify-end">
               <button
-                onClick={generateQuestionBatch}
-                disabled={questionBatchLoading || !questionBrief.trim()}
+                onClick={createQuestionBatch}
+                disabled={!questionBrief.trim()}
                 className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-colors"
               >
-                {questionBatchLoading ? 'Generating…' : 'Generate 5 questions'}
+                Create question batch
               </button>
             </div>
             {questionBatchError && <p className="mt-3 text-sm text-red-400">{questionBatchError}</p>}
@@ -585,7 +597,18 @@ export default function App() {
                       <span className="text-xs text-[#ff6a33] font-mono pt-1">0{index + 1}</span>
                       <div>
                         <h3 className="text-base font-semibold text-[#e8eaed]">{item.question}</h3>
-                        <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{item.answer}</p>
+                        {item.answer ? (
+                          <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{item.answer}</p>
+                        ) : (
+                          <button
+                            onClick={() => generateAnswer(index)}
+                            disabled={answeringIndex !== null}
+                            className="mt-4 border border-[#ff4500] text-[#ff6a33] hover:bg-[#ff4500]/10 px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-colors"
+                          >
+                            {answeringIndex === index ? 'Generating answer…' : 'Generate answer'}
+                          </button>
+                        )}
+                        {answerErrors[index] && <p className="mt-3 text-sm text-red-400">{answerErrors[index]}</p>}
                       </div>
                     </div>
                   </article>

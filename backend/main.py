@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from crawler import crawl_reddit
 from extractors import extract_intel
-from generator import draft_post, draft_comment, generate_question_batch
+from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer
 import os, re, httpx, logging
 from fastapi import Header, Depends
 from dotenv import load_dotenv
@@ -182,6 +182,11 @@ class QuestionBatchRequest(BaseModel):
     brief: str
 
 
+class QuestionAnswerRequest(BaseModel):
+    brief: str = ""
+    question: str
+
+
 @app.post("/question-batch")
 def question_batch(req: QuestionBatchRequest):
     if not req.brief.strip():
@@ -191,6 +196,17 @@ def question_batch(req: QuestionBatchRequest):
     except Exception:
         logger.exception("Question batch generation failed")
         raise HTTPException(status_code=500, detail="Question batch generation failed. Please try again.")
+
+
+@app.post("/question-answer")
+def question_answer(req: QuestionAnswerRequest):
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    try:
+        return generate_question_answer(req.brief, req.question)
+    except Exception:
+        logger.exception("Question answer generation failed")
+        raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")
 
 
 @app.post("/draft")

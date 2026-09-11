@@ -76,17 +76,18 @@ Rules:
 Output ONLY the comment body. No preamble, no markdown."""
 
 
-QUESTION_BATCH_SYSTEM_PROMPT = """Turn a short research brief into exactly five useful questions and five direct draft answers.
+QUESTION_BATCH_SYSTEM_PROMPT = """Turn a short research brief into exactly five useful questions.
 
 Rules:
 - Each question must explore a different angle of the brief
 - Questions must be specific, natural, and answerable
-- Answers must be concise, concrete, and clearly separated
-- Do not add facts, statistics, quotes, or sources that were not in the brief
-- If the brief lacks evidence, frame the answer as a hypothesis or next thing to validate
 
 Return valid JSON only in this shape:
-{"items":[{"question":"...","answer":"..."}]}"""
+{"questions":["..."]}"""
+
+QUESTION_ANSWER_SYSTEM_PROMPT = """Write one concise, direct answer to the supplied question.
+
+When context is supplied, use only that context for factual claims. Do not invent facts, statistics, quotes, or sources. If reliable facts are unavailable, give practical guidance without pretending it is verified. Output only the answer."""
 
 
 def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: str = "reddit") -> dict:
@@ -150,7 +151,7 @@ def draft_comment(post: str, intent: str) -> dict:
 
 
 def generate_question_batch(brief: str) -> dict:
-    """Generate five distinct question-and-answer pairs from a short brief."""
+    """Generate five distinct questions from a short brief."""
     resp = get_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -162,10 +163,28 @@ def generate_question_batch(brief: str) -> dict:
         max_tokens=1200,
     )
     payload = json.loads(resp.choices[0].message.content)
-    items = payload.get("items", [])
-    if len(items) != 5 or any(not item.get("question") or not item.get("answer") for item in items):
+    questions = payload.get("questions", [])
+    if len(questions) != 5 or any(not isinstance(question, str) or not question.strip() for question in questions):
         raise ValueError("Question batch response was incomplete")
-    return {"items": items}
+    return {"questions": questions}
+
+
+def generate_question_answer(brief: str, question: str) -> dict:
+    """Generate one answer for one selected question."""
+    context = f"Context:\n{brief.strip()}\n\n" if brief.strip() else ""
+    resp = get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": QUESTION_ANSWER_SYSTEM_PROMPT},
+            {"role": "user", "content": f"{context}Question:\n{question.strip()}"},
+        ],
+        temperature=0.4,
+        max_tokens=350,
+    )
+    answer = resp.choices[0].message.content.strip()
+    if not answer:
+        raise ValueError("Question answer was empty")
+    return {"answer": answer}
 
 
 def detect_tone(text: str) -> str:
