@@ -407,7 +407,7 @@ async def question_answer(req: QuestionAnswerRequest):
     # If the search fails we still answer, but the reply says it is unsourced.
     results = []
     try:
-        results = await search_web(req.question)
+        results = await search_web(req.question, reddit_only=True)
     except Exception:
         logger.exception("Web search failed, answering without sources")
 

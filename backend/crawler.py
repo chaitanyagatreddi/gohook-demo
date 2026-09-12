@@ -102,7 +102,7 @@ async def crawl_reddit(query: str, subreddits: list[str], expand: bool = False) 
     return all_posts
 
 
-async def search_web(query: str, limit: int = 6) -> list[dict]:
+async def search_web(query: str, limit: int = 6, reddit_only: bool = False) -> list[dict]:
     """
     Plain web search — no "reddit" added, no Reddit-only filter.
     Used to answer factual questions from sources instead of memory.
@@ -114,7 +114,8 @@ async def search_web(query: str, limit: int = 6) -> list[dict]:
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             SERPER_URL,
-            json={"q": query, "num": limit},
+            # reddit_only keeps every result on Reddit, for the Questions page.
+            json={"q": f"{query} site:reddit.com" if reddit_only else query, "num": limit},
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             timeout=15,
         )
@@ -126,7 +127,7 @@ async def search_web(query: str, limit: int = 6) -> list[dict]:
     # Google's own answer box, when there is one, is usually the freshest fact.
     box = data.get("answerBox") or {}
     box_text = box.get("answer") or box.get("snippet")
-    if box_text:
+    if box_text and not reddit_only:
         results.append({
             "title": box.get("title", "Answer box"),
             "snippet": box_text,
