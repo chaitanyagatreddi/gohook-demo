@@ -560,7 +560,14 @@ export default function App() {
         <aside className="sticky top-0 h-screen flex-none w-16 md:w-60 flex flex-col bg-[#14171c] border-r border-[#242a33] py-5">
           <div className="px-0 md:px-5 mb-6 flex flex-col items-center md:items-start">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ff4500]" />
+              <svg viewBox="0 0 32 32" className="w-[22px] h-[22px] flex-none" aria-hidden="true">
+                <g stroke="#ff4500" strokeWidth="2" fill="none">
+                  <path d="M16 9v8M8 23v-6h16v6" />
+                  <rect x="12" y="3" width="8" height="7" rx="1" />
+                  <rect x="4" y="22" width="8" height="7" rx="1" />
+                  <rect x="20" y="22" width="8" height="7" rx="1" />
+                </g>
+              </svg>
               <h1 className="hidden md:block text-lg font-bold tracking-tight">GoHook</h1>
             </div>
             <p className="hidden md:block text-xs text-[#9aa4b2] mt-2 leading-snug">
