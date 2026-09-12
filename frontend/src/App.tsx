@@ -110,7 +110,8 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 }
 
 type Draft = { draft: string; word_count: number; tone: string }
-type QuestionAnswer = { question: string; answer?: string }
+type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string }
+type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[] }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
   pricing: { icon: '💰', label: 'Pricing' },
@@ -284,8 +285,8 @@ export default function App() {
           id,
           title: item.question,
           text: item.answer ?? '',
-          source_url: '',
-          subreddit: 'batch question',
+          source_url: item.sources?.[0]?.url ?? '',
+          subreddit: item.sources?.length ? `${item.sources.length} sources` : 'batch question',
           reddit_score: 0,
           origin: 'question',
           column: 'new',
@@ -323,7 +324,7 @@ export default function App() {
         throw new Error(err.detail || 'Answer generation failed')
       }
       const data = await res.json()
-      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer } : entry))
+      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [] } : entry))
     } catch (e: unknown) {
       setAnswerErrors(prev => ({ ...prev, [index]: e instanceof Error ? e.message : 'Something went wrong' }))
     } finally {
@@ -848,7 +849,24 @@ export default function App() {
                       <div>
                         <h3 className="text-base font-semibold text-[#e8eaed]">{item.question}</h3>
                         {item.answer ? (
-                          <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{item.answer}</p>
+                          <>
+                            <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">
+                              {renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}
+                            </p>
+                            {!!item.sources?.length && (
+                              <details className="mt-3">
+                                <summary className="text-xs text-[#9aa4b2] cursor-pointer">{item.sources.length} sources</summary>
+                                <ol className="mt-2 space-y-1">
+                                  {item.sources.map(src => (
+                                    <li key={src.n} className="text-xs">
+                                      <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-[#ff6a33] hover:underline">[{src.n}] {src.title}</a>
+                                      {src.site && <span className="text-[#6b7280]"> {src.site}</span>}
+                                    </li>
+                                  ))}
+                                </ol>
+                              </details>
+                            )}
+                          </>
                         ) : (
                           <button
                             onClick={() => generateAnswer(index)}
