@@ -38,19 +38,40 @@ def _headers() -> dict:
     return {"x-api-key": COMPOSIO_API_KEY, "Content-Type": "application/json"}
 
 
-async def create_connect_link(user_id: str) -> dict:
+# Where people may be sent back to after signing into Reddit. Anything else is
+# refused, so the link can't be used to bounce someone to a stranger's site.
+RETURN_ORIGINS = {
+    "https://gohooklive.vercel.app",
+    "https://gohooklive-git-staging-chaitanya-s-projects93.vercel.app",
+    "https://redditscan.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+}
+DEFAULT_RETURN = "https://gohooklive.vercel.app"
+
+
+async def create_connect_link(user_id: str, return_origin: Optional[str] = None) -> dict:
     """
     Ask Composio for a sign-in page for this person.
 
     We pass the GoHook account id as Composio's user id, so the connection is
-    filed under the right person. Returns the link and Composio's id for the
-    connection it is about to create.
+    filed under the right person. After signing in, Composio sends them back to
+    the site they started on, if it is one of ours. Without this Composio falls
+    back to localhost:3000, which does not exist.
     """
+    origin = (return_origin or "").rstrip("/")
+    if origin not in RETURN_ORIGINS:
+        origin = DEFAULT_RETURN
+
     async with httpx.AsyncClient() as client:
         res = await client.post(
             f"{API}/connected_accounts/link",
             headers=_headers(),
-            json={"auth_config_id": REDDIT_AUTH_CONFIG_ID, "user_id": user_id},
+            json={
+                "auth_config_id": REDDIT_AUTH_CONFIG_ID,
+                "user_id": user_id,
+                "callback_url": f"{origin}/?reddit=connected",
+            },
             timeout=30,
         )
         res.raise_for_status()

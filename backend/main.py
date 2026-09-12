@@ -149,10 +149,13 @@ def health():
 
 
 @app.post("/reddit/connect")
-async def reddit_connect(user_id: Optional[str] = Depends(require_user)):
+async def reddit_connect(
+    user_id: Optional[str] = Depends(require_user),
+    origin: Optional[str] = Header(None),
+):
     """Hand back a Composio sign-in page for this person to open."""
     try:
-        link = await composio_reddit.create_connect_link(user_id)
+        link = await composio_reddit.create_connect_link(user_id, origin)
         # Only mark it pending if this is genuinely a new connection. Reconnecting
         # an already-working account must not knock it out of service.
         existing = await composio_reddit.read_connection(user_id)

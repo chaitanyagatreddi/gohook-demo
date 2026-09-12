@@ -129,7 +129,24 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
-  const [view, setView] = useState<'results' | 'questions' | 'board' | 'graph' | 'settings'>('results')
+  const [view, setView] = useState<'results' | 'questions' | 'board' | 'graph' | 'settings'>(() => {
+    // Coming back from signing into Reddit: land on the Graph page.
+    try {
+      return new URLSearchParams(window.location.search).get('reddit') === 'connected' ? 'graph' : 'results'
+    } catch {
+      return 'results'
+    }
+  })
+
+  // Tidy the address bar once we've read the flag.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('reddit') === 'connected') {
+      params.delete('reddit')
+      const rest = params.toString()
+      window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash)
+    }
+  }, [])
   const [board, setBoard] = useState<BoardCard[]>(() => {
     try {
       const raw = localStorage.getItem('redditscan_board')
