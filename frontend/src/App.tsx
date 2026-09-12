@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import Board, { type BoardCard } from './Board'
+import Graph from './Graph'
 import { supabase } from './supabaseClient'
 import type { Session } from '@supabase/supabase-js'
 import OnboardingDeck from './OnboardingDeck'
@@ -128,7 +129,7 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
-  const [view, setView] = useState<'results' | 'questions' | 'board' | 'settings'>('results')
+  const [view, setView] = useState<'results' | 'questions' | 'board' | 'graph' | 'settings'>('results')
   const [board, setBoard] = useState<BoardCard[]>(() => {
     try {
       const raw = localStorage.getItem('redditscan_board')
@@ -161,6 +162,13 @@ export default function App() {
 
   function addQuestionToBoard(turn: AskTurn) {
     const id = `ask::${turn.question}::${turn.answer.slice(0, 40)}`
+    tellGraphSaved(turn.sources.map(src => ({
+      title: src.title,
+      selftext: src.selftext,
+      permalink: src.permalink,
+      url: src.url,
+      subreddit_name_prefixed: src.subreddit_name_prefixed,
+    })))
     setBoard(prev => (prev.some(c => c.id === id) ? prev : [
       ...prev,
       {
@@ -178,6 +186,14 @@ export default function App() {
 
   function addToBoard(item: ResultItem, origin: string) {
     const id = `${item.source_url}::${item.text.slice(0, 40)}`
+    tellGraphSaved([{
+      title: item.text.slice(0, 120),
+      selftext: item.text,
+      url: item.source_url,
+      permalink: item.source_url,
+      subreddit_name_prefixed: item.subreddit,
+      score: item.reddit_score,
+    }])
     setBoard(prev => (prev.some(c => c.id === id) ? prev : [
       ...prev,
       {
@@ -193,6 +209,22 @@ export default function App() {
     ]))
   }
   const boardIds = new Set(board.map(c => c.id))
+
+  // Board saves also belong in the graph, under "Saved". Quiet on failure —
+  // a graph hiccup must never stop something being saved to the Board.
+  async function tellGraphSaved(threads: { title?: string; selftext?: string; permalink?: string; url?: string; subreddit_name_prefixed?: string; score?: number }[]) {
+    const real = threads.filter(t => (t.permalink || t.url || '').includes('/comments/'))
+    if (real.length === 0) return
+    try {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) return   // signed out: nothing to attach it to
+      await fetch(`${API}/graph/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+        body: JSON.stringify({ threads: real }),
+      })
+    } catch { /* the Board save already happened; leave it */ }
+  }
 
   // Compose section (Notepad + Reply) collapsed by default
   const [composeOpen, setComposeOpen] = useState(false)
@@ -211,6 +243,41 @@ export default function App() {
   const [questionBatchError, setQuestionBatchError] = useState('')
   const [answeringIndex, setAnsweringIndex] = useState<number | null>(null)
   const [answerErrors, setAnswerErrors] = useState<Record<number, string>>({})
+  const [pickedQuestions, setPickedQuestions] = useState<Set<number>>(new Set())
+
+  function toggleQuestion(index: number) {
+    setPickedQuestions(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  function addPickedToBoard() {
+    const picked = [...pickedQuestions].sort((a, b) => a - b)
+    setBoard(prev => {
+      const next = [...prev]
+      for (const index of picked) {
+        const item = questionBatch[index]
+        if (!item) continue
+        const id = `batch::${item.question}`
+        if (next.some(c => c.id === id)) continue
+        next.push({
+          id,
+          title: item.question,
+          text: item.answer ?? '',
+          source_url: '',
+          subreddit: 'batch question',
+          reddit_score: 0,
+          origin: 'question',
+          column: 'new',
+        })
+      }
+      return next
+    })
+    setPickedQuestions(new Set())
+  }
 
   function createQuestionBatch() {
     const questions = questionBrief.split('\n').map(question => question.trim()).filter(Boolean)
@@ -259,6 +326,29 @@ export default function App() {
 
   // Auth + Zernio connection state
   const [session, setSession] = useState<Session | null>(null)
+
+  // Whatever is already on the Board was saved before the graph knew about it.
+  // Push those across once, after sign-in, then never again on this device.
+  useEffect(() => {
+    if (!session || board.length === 0) return
+    try {
+      if (localStorage.getItem('gohook_board_backfilled') === '1') return
+    } catch { return }
+    const threads = board
+      .filter(c => (c.source_url || '').includes('/comments/'))
+      .map(c => ({
+        title: (c.title || c.text || '').slice(0, 120),
+        selftext: c.text || '',
+        permalink: c.source_url,
+        url: c.source_url,
+        subreddit_name_prefixed: c.subreddit || '',
+        score: c.reddit_score || 0,
+      }))
+    if (threads.length === 0) return
+    tellGraphSaved(threads).then(() => {
+      try { localStorage.setItem('gohook_board_backfilled', '1') } catch { /* blocked */ }
+    })
+  }, [session, board.length])
   const [authEmail, setAuthEmail] = useState('')
   const [authSent, setAuthSent] = useState(false)
   const [authError, setAuthError] = useState('')
@@ -579,6 +669,7 @@ export default function App() {
               { key: 'results', label: 'Results', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
               { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
               { key: 'questions', label: 'Questions', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></> },
+              { key: 'graph', label: 'Graph', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="12" cy="17" r="2.5" /><path d="M8 7.5l8 -0.5M7.2 8.2L11 14.8M16.8 9.2L13 14.8" /></> },
               { key: 'settings', label: 'Settings', icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></> },
             ] as const).map(item => (
               <button
@@ -622,6 +713,8 @@ export default function App() {
           />
           )}
         </div>
+      ) : view === 'graph' ? (
+        <Graph signedIn={!!session} onSignIn={() => setShowAuthGate(true)} />
       ) : (
       <div className="max-w-3xl mx-auto px-4 py-10">
         {/* Hero + search bar */}
@@ -694,9 +787,46 @@ export default function App() {
             {questionBatchError && <p className="mt-3 text-sm text-red-400">{questionBatchError}</p>}
             {questionBatch.length > 0 && (
               <div className="mt-7 space-y-3">
+                <div className="flex items-center gap-3 pb-1">
+                  <label className="flex items-center gap-2 text-sm text-[#9aa4b2] cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={pickedQuestions.size === questionBatch.length && questionBatch.length > 0}
+                      onChange={e =>
+                        setPickedQuestions(e.target.checked ? new Set(questionBatch.map((_, i) => i)) : new Set())
+                      }
+                      className="accent-[#ff4500] w-4 h-4"
+                    />
+                    Select all
+                  </label>
+                  {pickedQuestions.size > 0 && (
+                    <>
+                      <span className="text-sm text-[#9aa4b2]">{pickedQuestions.size} selected</span>
+                      <button
+                        onClick={addPickedToBoard}
+                        className="ml-auto bg-[#ff4500] hover:bg-[#ff6a33] text-white text-sm font-medium px-3.5 py-1.5 rounded-lg transition-colors"
+                      >
+                        Add to Board
+                      </button>
+                    </>
+                  )}
+                </div>
+
                 {questionBatch.map((item, index) => (
-                  <article key={`${index}-${item.question}`} className="border border-[#242a33] bg-[#14171c] rounded-xl p-5">
+                  <article
+                    key={`${index}-${item.question}`}
+                    className={`border rounded-xl p-5 transition-colors ${
+                      pickedQuestions.has(index) ? 'border-[#ff4500] bg-[#14171c]' : 'border-[#242a33] bg-[#14171c]'
+                    }`}
+                  >
                     <div className="flex gap-3">
+                      <input
+                        type="checkbox"
+                        checked={pickedQuestions.has(index)}
+                        onChange={() => toggleQuestion(index)}
+                        className="accent-[#ff4500] w-4 h-4 mt-1 flex-none"
+                        title="Pick this one"
+                      />
                       <span className="text-xs text-[#ff6a33] font-mono pt-1">0{index + 1}</span>
                       <div>
                         <h3 className="text-base font-semibold text-[#e8eaed]">{item.question}</h3>

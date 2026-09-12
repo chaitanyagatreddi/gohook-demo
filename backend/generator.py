@@ -85,9 +85,22 @@ Rules:
 Return valid JSON only in this shape:
 {"questions":["..."]}"""
 
-QUESTION_ANSWER_SYSTEM_PROMPT = """Write one concise, direct answer to the supplied question.
+QUESTION_ANSWER_SYSTEM_PROMPT = """Answer the supplied question properly, in about 5 to 6 lines.
 
-When context is supplied, use only that context for factual claims. Do not invent facts, statistics, quotes, or sources. If reliable facts are unavailable, give practical guidance without pretending it is verified. Output only the answer."""
+Shape:
+- Open with the direct answer in one sentence.
+- Then give the detail that makes it useful: the numbers, the names, the caveat,
+  what changed recently, or what people actually run into.
+- Finish with the practical takeaway if there is one.
+
+Do not pad to reach the length. If a question genuinely has a one-line answer,
+say it and then say what sits behind it — why it is that way, or what it means
+in practice.
+
+When context is supplied, use only that context for factual claims. Do not invent
+facts, statistics, quotes, or sources. Say plainly when something is uncertain or
+when a figure is the latest you are aware of rather than current. Output only the
+answer, no headings, no bullet characters."""
 
 
 def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: str = "reddit") -> dict:
@@ -169,22 +182,68 @@ def generate_question_batch(brief: str) -> dict:
     return {"questions": questions}
 
 
-def generate_question_answer(brief: str, question: str) -> dict:
-    """Generate one answer for one selected question."""
-    context = f"Context:\n{brief.strip()}\n\n" if brief.strip() else ""
+SOURCED_ANSWER_SYSTEM_PROMPT = """Answer the question using ONLY the search results supplied, in about 5 to 6 lines.
+
+Shape:
+- Open with the direct answer in one sentence.
+- Then the detail that makes it useful: the numbers, the names, the caveat, what changed.
+- Finish with the practical takeaway if there is one.
+
+Rules:
+- Every fact must come from the results. Never add a number, name or date that is not there.
+- Mark each fact with the source it came from, like [2], matching the numbers given.
+- If the results disagree, say so and give both.
+- If the results do not answer the question, say plainly that you could not find it.
+  Do not fall back on what you remember.
+- Where a figure has a date attached, say the date — "as of 2024" — rather than
+  implying it is today's number.
+- Output only the answer. No headings, no bullet characters."""
+
+
+def generate_question_answer(brief: str, question: str, results: Optional[List[dict]] = None) -> dict:
+    """
+    Answer one question.
+
+    With `results` (from a web search) the answer is built only from those and
+    carries [n] marks. Without them it falls back to the model's own knowledge,
+    which is not sourced.
+    """
+    if results:
+        listed = "\n\n".join(
+            f"[{i}] {r.get('title','')} — {r.get('site','')}"
+            + (f" ({r['date']})" if r.get("date") else "")
+            + f"\n{r.get('snippet','')}"
+            for i, r in enumerate(results, 1)
+        )
+        context = f"Context:\n{brief.strip()}\n\n" if brief.strip() else ""
+        user = f"{context}Search results:\n{listed}\n\nQuestion:\n{question.strip()}"
+        system = SOURCED_ANSWER_SYSTEM_PROMPT
+    else:
+        context = f"Context:\n{brief.strip()}\n\n" if brief.strip() else ""
+        user = f"{context}Question:\n{question.strip()}"
+        system = QUESTION_ANSWER_SYSTEM_PROMPT
+
     resp = get_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": QUESTION_ANSWER_SYSTEM_PROMPT},
-            {"role": "user", "content": f"{context}Question:\n{question.strip()}"},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
-        temperature=0.4,
-        max_tokens=350,
+        temperature=0.2 if results else 0.4,
+        max_tokens=600,
     )
     answer = resp.choices[0].message.content.strip()
     if not answer:
         raise ValueError("Question answer was empty")
-    return {"answer": answer}
+
+    return {
+        "answer": answer,
+        "sources": [
+            {"n": i, "title": r.get("title", ""), "url": r.get("url", ""), "site": r.get("site", ""), "date": r.get("date", "")}
+            for i, r in enumerate(results or [], 1)
+        ],
+        "sourced": bool(results),
+    }
 
 
 PLAN_QUERIES_SYSTEM_PROMPT = """You turn a user's question into Google searches that find relevant Reddit threads.

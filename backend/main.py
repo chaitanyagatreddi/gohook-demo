@@ -3,9 +3,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
-from crawler import crawl_reddit, search_many
+from crawler import crawl_reddit, search_many, search_web
 from extractors import extract_intel
 from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads
+from graph import ingest_threads, link_user_to_threads, read_graph
+from search_console import parse_gsc
+import gsc_patterns, gsc_store
+from topics import tag_threads
+import composio_reddit
 import os, re, httpx, logging
 from fastapi import Header, Depends
 from dotenv import load_dotenv
@@ -143,6 +148,134 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/reddit/connect")
+async def reddit_connect(user_id: Optional[str] = Depends(require_user)):
+    """Hand back a Composio sign-in page for this person to open."""
+    try:
+        link = await composio_reddit.create_connect_link(user_id)
+        # Only mark it pending if this is genuinely a new connection. Reconnecting
+        # an already-working account must not knock it out of service.
+        existing = await composio_reddit.read_connection(user_id)
+        if not existing or existing.get("connected_account_id") != link["connected_account_id"]:
+            await composio_reddit.save_connection(user_id, link["connected_account_id"], "pending")
+        return link
+    except composio_reddit.NotConfigured:
+        raise HTTPException(status_code=503, detail="Reddit connecting is not set up yet.")
+    except Exception:
+        logger.exception("Could not start Reddit connecting")
+        raise HTTPException(status_code=502, detail="Could not reach Reddit right now. Please try again.")
+
+
+@app.get("/reddit/status")
+async def reddit_status(user_id: Optional[str] = Depends(require_user)):
+    """Whether this person's Reddit is connected, and who they are on Reddit."""
+    try:
+        saved = await composio_reddit.read_connection(user_id)
+        if not saved:
+            return {"connected": False}
+
+        live = await composio_reddit.connection_status(saved["connected_account_id"])
+
+        # Composio says ACTIVE the moment the person finishes signing in.
+        # Always bring our own record up to match, because pressing Connect a
+        # second time writes "pending" and would otherwise leave a working
+        # connection looking broken.
+        if live == "ACTIVE":
+            profile = None
+            if not saved.get("reddit_username"):
+                profile = await composio_reddit.get_profile(saved["connected_account_id"])
+            if profile or saved.get("status") != "active":
+                await composio_reddit.save_connection(
+                    user_id, saved["connected_account_id"], "active", profile
+                )
+                saved = await composio_reddit.read_connection(user_id) or saved
+        elif live in ("EXPIRED", "FAILED", "MISSING"):
+            await composio_reddit.save_connection(
+                user_id, saved["connected_account_id"], "expired"
+            )
+
+        return {
+            "connected": live == "ACTIVE",
+            "state": live,
+            "username": saved.get("reddit_username"),
+            "karma": (saved.get("meta") or {}).get("karma"),
+            "last_synced_at": saved.get("last_synced_at"),
+        }
+    except composio_reddit.NotConfigured:
+        raise HTTPException(status_code=503, detail="Reddit connecting is not set up yet.")
+    except Exception:
+        logger.exception("Could not check the Reddit connection")
+        raise HTTPException(status_code=502, detail="Could not check your Reddit connection.")
+
+
+@app.post("/reddit/sync")
+async def reddit_sync(user_id: Optional[str] = Depends(require_user)):
+    """Pull this person's own Reddit posts into their graph. Read only."""
+    saved = await composio_reddit.read_connection(user_id)
+    if not saved or saved.get("status") != "active":
+        raise HTTPException(status_code=400, detail="Connect your Reddit account first.")
+
+    username = saved.get("reddit_username")
+    if not username:
+        profile = await composio_reddit.get_profile(saved["connected_account_id"])
+        username = (profile or {}).get("username")
+        if username:
+            await composio_reddit.save_connection(
+                user_id, saved["connected_account_id"], "active", profile
+            )
+    if not username:
+        raise HTTPException(status_code=502, detail="Could not read your Reddit username.")
+
+    try:
+        posts = await composio_reddit.get_own_posts(user_id, username)
+        if not posts:
+            return {"added": 0, "username": username}
+
+        node_ids = await ingest_threads(posts)
+        if node_ids:
+            await link_user_to_threads(user_id, list(node_ids.values()), "authored")
+            await tag_threads(user_id, posts, node_ids)
+        await composio_reddit.mark_synced(user_id)
+        return {"added": len(node_ids), "username": username}
+    except Exception:
+        logger.exception("Could not pull this person's Reddit posts")
+        raise HTTPException(status_code=502, detail="Could not read your Reddit posts right now.")
+
+
+class SaveToGraphRequest(BaseModel):
+    threads: List[dict] = []   # anything with a reddit permalink or url
+
+
+@app.post("/graph/save")
+async def graph_save(req: SaveToGraphRequest, user_id: Optional[str] = Depends(require_user)):
+    """
+    Mark threads as saved by this person, so they show under Saved on the graph.
+    Called when something goes onto the Board. Safe to call twice.
+    """
+    if not req.threads:
+        return {"added": 0}
+    try:
+        node_ids = await ingest_threads(req.threads)
+        if not node_ids:
+            return {"added": 0}
+        await link_user_to_threads(user_id, list(node_ids.values()), "saved")
+        await tag_threads(user_id, req.threads, node_ids)
+        return {"added": len(node_ids)}
+    except Exception:
+        logger.exception("Could not save threads to the graph")
+        raise HTTPException(status_code=500, detail="Could not save that to your graph.")
+
+
+@app.get("/graph")
+async def graph(user_id: Optional[str] = Depends(get_current_user)):
+    """Nodes and links for the signed-in person's graph. Signed out gets an empty one."""
+    try:
+        return await read_graph(user_id)
+    except Exception:
+        logger.exception("Graph read failed")
+        raise HTTPException(status_code=500, detail="Could not load your graph. Please try again.")
+
+
 @app.post("/webhooks/new-user")
 async def new_user_webhook(payload: dict, x_webhook_secret: Optional[str] = Header(None)):
     if not WEBHOOK_SECRET or x_webhook_secret != WEBHOOK_SECRET:
@@ -182,7 +315,7 @@ class AskRequest(BaseModel):
 
 
 @app.post("/ask")
-async def ask(req: AskRequest):
+async def ask(req: AskRequest, user_id: Optional[str] = Depends(get_current_user)):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     try:
@@ -207,6 +340,16 @@ async def ask(req: AskRequest):
     except Exception:
         logger.exception("Ask failed")
         raise HTTPException(status_code=500, detail="Could not answer that. Please try again.")
+
+    # Feed the graph. The answer is already made, so a failure here must never
+    # break the reply the person is waiting for.
+    try:
+        node_ids = await ingest_threads(threads)
+        if user_id and node_ids:
+            await link_user_to_threads(user_id, list(node_ids.values()), "cited")
+            await tag_threads(user_id, threads, node_ids)
+    except Exception:
+        logger.exception("Graph write failed after ask")
 
     return {
         "answer": answer,
@@ -253,11 +396,20 @@ def question_batch(req: QuestionBatchRequest):
 
 
 @app.post("/question-answer")
-def question_answer(req: QuestionAnswerRequest):
+async def question_answer(req: QuestionAnswerRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    # Look it up first, so the answer comes from sources rather than memory.
+    # If the search fails we still answer, but the reply says it is unsourced.
+    results = []
     try:
-        return generate_question_answer(req.brief, req.question)
+        results = await search_web(req.question)
+    except Exception:
+        logger.exception("Web search failed, answering without sources")
+
+    try:
+        return await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
     except Exception:
         logger.exception("Question answer generation failed")
         raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")
@@ -399,4 +551,119 @@ async def schedule(req: ScheduleRequest, user_id: Optional[str] = Depends(get_cu
         "status": post.get("status", "scheduled"),
         "scheduled_for": req.scheduled_for,
         "subreddit": req.subreddit,
+    }
+
+
+# --- Search Console -------------------------------------------------------
+class GscImportRequest(BaseModel):
+    content: str
+    site_url: Optional[str] = None
+
+
+class GscPatternRequest(BaseModel):
+    name: str
+    pattern: str
+    intent_class: str = "question"
+
+
+@app.post("/gsc/import")
+async def gsc_import(req: GscImportRequest, user_id: str = Depends(require_user)):
+    """Parse an uploaded Search Console CSV and store it."""
+    try:
+        parsed = await run_in_threadpool(parse_gsc, req.content)
+    except ValueError as exc:
+        # These messages are written for the person who uploaded the file.
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    import_id = await gsc_store.create_import(user_id, parsed, req.site_url)
+    return {
+        "import_id": import_id,
+        "key_kind": parsed["key_kind"],
+        "row_count": parsed["row_count"],
+        "columns_found": parsed["columns_found"],
+        "warnings": parsed["warnings"],
+    }
+
+
+@app.get("/gsc/imports")
+async def gsc_imports(user_id: str = Depends(require_user)):
+    return {"imports": await gsc_store.list_imports(user_id)}
+
+
+@app.get("/gsc/analyse")
+async def gsc_analyse(
+    import_id: Optional[str] = None,
+    limit: Optional[int] = 100,
+    sort_by: str = "impressions",
+    user_id: str = Depends(require_user),
+):
+    """
+    Score and bucket one import.
+
+    `limit` is the slice shown by default; 0 means the whole file. Counts in
+    the response say which slice they came from, so a top-100 number is never
+    read as a whole-file number.
+    """
+    if sort_by not in {"impressions", "clicks", "position", "ctr"}:
+        raise HTTPException(status_code=400, detail="sort_by must be impressions, clicks, position or ctr")
+
+    rows, key_kind = await gsc_store.read_rows(user_id, import_id)
+    if not rows:
+        return {"rows": [], "total_rows": 0, "key_kind": None}
+
+    saved = await gsc_store.list_patterns(user_id)
+    extra = [(p["name"], p["pattern"], p.get("intent_class") or "question") for p in saved]
+
+    return await run_in_threadpool(
+        gsc_patterns.analyse, rows, key_kind, extra, (limit or None), sort_by
+    )
+
+
+@app.get("/gsc/patterns")
+async def gsc_list_patterns(user_id: str = Depends(require_user)):
+    return {
+        "defaults": [
+            {"name": n, "pattern": p, "intent_class": k}
+            for n, p, k in gsc_patterns.DEFAULT_PATTERNS
+        ],
+        "saved": await gsc_store.list_patterns(user_id),
+    }
+
+
+@app.post("/gsc/patterns")
+async def gsc_save_pattern(req: GscPatternRequest, user_id: str = Depends(require_user)):
+    try:
+        gsc_patterns.validate_pattern(req.pattern)
+    except gsc_patterns.PatternError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if req.intent_class not in gsc_patterns.INTENT_WEIGHT:
+        raise HTTPException(
+            status_code=400,
+            detail="intent_class must be one of " + ", ".join(gsc_patterns.INTENT_WEIGHT),
+        )
+    return await gsc_store.save_pattern(user_id, req.name, req.pattern, req.intent_class)
+
+
+@app.delete("/gsc/patterns/{pattern_id}")
+async def gsc_delete_pattern(pattern_id: str, user_id: str = Depends(require_user)):
+    await gsc_store.delete_pattern(user_id, pattern_id)
+    return {"deleted": pattern_id}
+
+
+@app.post("/gsc/patterns/test")
+async def gsc_test_pattern(req: GscPatternRequest, import_id: Optional[str] = None,
+                           user_id: str = Depends(require_user)):
+    """How many rows a pattern matches, before it gets saved."""
+    try:
+        gsc_patterns.validate_pattern(req.pattern)
+    except gsc_patterns.PatternError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    rows, _ = await gsc_store.read_rows(user_id, import_id)
+    matcher = re.compile(req.pattern, re.IGNORECASE)
+    matches = [r["key"] for r in rows if matcher.search(r["key"])]
+    return {
+        "matched": len(matches),
+        "of": len(rows),
+        "examples": matches[:10],
     }

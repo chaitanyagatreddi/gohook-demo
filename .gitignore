@@ -14,3 +14,9 @@ node_modules/
 dist/
 .DS_Store
 .vercel
+
+# Local env + tooling
+.env.local
+*.env.local
+.env.*.local
+.claude/
