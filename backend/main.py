@@ -119,7 +119,14 @@ app = FastAPI(title="Redditscan API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://redditscan.vercel.app", "https://redditscan-git-staging-chaitanya-s-projects93.vercel.app"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://gohooklive.vercel.app",
+        "https://gohooklive-git-staging-chaitanya-s-projects93.vercel.app",
+        "https://redditscan.vercel.app",
+        "https://redditscan-git-staging-chaitanya-s-projects93.vercel.app",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
