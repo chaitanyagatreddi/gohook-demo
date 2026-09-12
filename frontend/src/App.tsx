@@ -564,7 +564,7 @@ export default function App() {
               <h1 className="hidden md:block text-lg font-bold tracking-tight">GoHook</h1>
             </div>
             <p className="hidden md:block text-xs text-[#9aa4b2] mt-2 leading-snug">
-              Reddit, focus mode: pricing, complaints, comparisons, no noise.
+              Your knowledge graph for Reddit.
             </p>
           </div>
           <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-col gap-1">
@@ -621,9 +621,9 @@ export default function App() {
         {!intel && !loading && searches.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
-              Reddit signal.<br />
+              Your knowledge graph<br />
               <span className="bg-gradient-to-r from-[#ff4500] to-[#ff6a33] bg-clip-text text-transparent">
-                Zero noise.
+                for Reddit.
               </span>
             </h2>
             <p className="text-[#9aa4b2] mt-3 max-w-md mx-auto">
