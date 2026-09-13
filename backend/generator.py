@@ -186,19 +186,75 @@ def generate_question_batch(brief: str) -> dict:
 SOURCED_ANSWER_SYSTEM_PROMPT = """Answer the question using ONLY the supplied Reddit results.
 
 Return valid JSON only in this exact shape:
-{"answer":"5 to 6 concise lines with [n] source citations","claims":[{"text":"one factual claim","sources":[1,2]}]}
+{"answer":"5 to 6 concise lines with [S1] source citations","claims":[{"text":"one factual claim","sources":[1,2]}]}
 
 Rules:
 - Every factual claim must use one or more source numbers from the supplied results.
-- Every source number in a claim must appear in the answer as [n].
+- Every source number in a claim must appear in the answer as [S1], [S2], and so on.
 - If evidence is incomplete or disagrees, say so plainly in the answer.
 - Never add a fact, name, number, or date that is not in the supplied results.
 - Do not include markdown headings or bullets in the answer.
 """
 
+SOURCE_RELEVANCE_SYSTEM_PROMPT = """Score how directly each supplied Reddit result can answer the user's question.
+
+Return valid JSON only in this exact shape:
+{"sources":[{"n":1,"relevance":0,"reason":"brief reason"}]}
+
+Rules:
+- Judge only the supplied title and snippet. Do not use outside knowledge.
+- 80-100 means it directly addresses the question and contains useful evidence.
+- 60-79 means it addresses a meaningful part of the question.
+- Below 60 means it is incidental, off-topic, or too vague to support an answer.
+- Return one entry for every supplied source number.
+"""
+
+
+def evaluate_question_sources(question: str, results: List[dict]) -> dict:
+    """Score source relevance and return only evidence that is on topic."""
+    if not results:
+        return {"relevant": [], "score": 0, "communities": 0, "passed": False}
+    listed = "\n\n".join(
+        f"[S{i}] {result.get('title', '')}\n{result.get('snippet', '')}"
+        for i, result in enumerate(results, 1)
+    )
+    resp = get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": SOURCE_RELEVANCE_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Question:\n{question.strip()}\n\nSources:\n{listed}"},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+        max_tokens=900,
+    )
+    payload = json.loads(resp.choices[0].message.content)
+    scores = {}
+    for item in payload.get("sources", []):
+        if not isinstance(item, dict) or not isinstance(item.get("n"), int):
+            continue
+        relevance = max(0, min(100, int(item.get("relevance", 0))))
+        scores[item["n"]] = {"relevance": relevance, "reason": str(item.get("reason", "")).strip()}
+    scored = []
+    for index, result in enumerate(results, 1):
+        review = scores.get(index, {"relevance": 0, "reason": "No relevance score returned"})
+        scored.append({**result, "relevance": review["relevance"], "relevance_reason": review["reason"]})
+    relevant = sorted((item for item in scored if item["relevance"] >= 60), key=lambda item: item["relevance"], reverse=True)
+    top_scores = [item["relevance"] for item in relevant[:3]]
+    relevance_score = round(sum(top_scores) / 3) if top_scores else 0
+    communities = len({item.get("subreddit_name_prefixed", "") for item in relevant if item.get("subreddit_name_prefixed")})
+    diversity_factor = min(1, communities / 2)
+    evidence_score = round(relevance_score * diversity_factor)
+    return {
+        "relevant": relevant,
+        "score": evidence_score,
+        "communities": communities,
+        "passed": len(relevant) >= 3 and communities >= 2 and evidence_score >= 60,
+    }
+
 def validate_question_answer(answer: str, claims: object, source_count: int) -> dict:
     """Check that an answer has a usable, source-backed claim map."""
-    cited = {int(n) for n in re.findall(r"\[(\d+)\]", answer)}
+    cited = {int(n) for n in re.findall(r"\[S(\d+)\]", answer)}
     valid_citations = {n for n in cited if 1 <= n <= source_count}
     invalid_citations = sorted(cited - valid_citations)
     valid_claims = []
@@ -229,7 +285,7 @@ def generate_question_answer(brief: str, question: str, results: Optional[List[d
     """Generate a source-backed answer and its structured claim map."""
     if results:
         listed = "\n\n".join(
-            f"[{i}] {r.get('title','')} — {r.get('site','')}"
+            f"[S{i}] {r.get('title','')} — {r.get('site','')}"
             + (f" ({r['date']})" if r.get("date") else "")
             + f"\n{r.get('snippet','')}"
             for i, r in enumerate(results, 1)

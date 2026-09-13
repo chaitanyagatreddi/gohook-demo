@@ -92,13 +92,13 @@ type AskSource = {
 }
 type AskTurn = { question: string; answer: string; queries_used: string[]; sources: AskSource[] }
 
-// Turn "[3]" citations into links to the matching Reddit thread, and "**x**" into bold
+// Turn "[S3]" citations into links to the matching Reddit thread, and "**x**" into bold
 function renderAnswer(answer: string, sources: AskSource[]) {
-  return answer.split(/(\[\d+\]|\*\*[^*]+\*\*)/g).map((part, i) => {
+  return answer.split(/(\[S?\d+\]|\*\*[^*]+\*\*)/g).map((part, i) => {
     if (/^\*\*[^*]+\*\*$/.test(part)) {
       return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
     }
-    const m = part.match(/^\[(\d+)\]$/)
+    const m = part.match(/^\[S?(\d+)\]$/)
     const src = m && sources.find(s => s.n === Number(m[1]))
     if (!src) return <span key={i}>{part.replace(/^#+\s*/gm, '')}</span>
     return (
@@ -111,10 +111,14 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 
 type Draft = { draft: string; word_count: number; tone: string }
 type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
-type QuestionValidation = { checked: number; verified: number; communities: number; retried: boolean; passed: boolean }
+type QuestionValidation = { checked: number; verified: number; communities: number; score: number; retried: boolean; passed: boolean }
 type QuestionClaim = { text: string; sources: number[] }
-type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[] }
+type QuestionCheck = { label: string; passed: boolean; detail: string }
+type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[] }
 type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun }
+type QuestionStageKey = 'research' | 'validate' | 'answer' | 'correct'
+type QuestionStage = { state: 'idle' | 'active' | 'passed' | 'review'; detail: string }
+type QuestionProgress = { questionIndex: number; running: boolean; steps: Record<QuestionStageKey, QuestionStage> }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
   pricing: { icon: '💰', label: 'Pricing' },
@@ -265,6 +269,7 @@ export default function App() {
   const [answeringIndex, setAnsweringIndex] = useState<number | null>(null)
   const [answerErrors, setAnswerErrors] = useState<Record<number, string>>({})
   const [pickedQuestions, setPickedQuestions] = useState<Set<number>>(new Set())
+  const [questionProgress, setQuestionProgress] = useState<QuestionProgress | null>(null)
 
   function toggleQuestion(index: number) {
     setPickedQuestions(prev => {
@@ -315,6 +320,7 @@ export default function App() {
       return
     }
     setAnswerErrors({})
+    setQuestionProgress(null)
     setQuestionBatch(questions.map(question => ({ question })))
   }
 
@@ -323,8 +329,18 @@ export default function App() {
     if (!item) return
     setAnsweringIndex(index)
     setAnswerErrors(prev => ({ ...prev, [index]: '' }))
+    setQuestionProgress({
+      questionIndex: index,
+      running: true,
+      steps: {
+        research: { state: 'active', detail: 'Starting Reddit research' },
+        validate: { state: 'idle', detail: 'Waiting for research' },
+        answer: { state: 'idle', detail: 'Waiting for evidence' },
+        correct: { state: 'idle', detail: 'Waiting for answer validation' },
+      },
+    })
     try {
-      const res = await fetch(`${API}/question-answer`, {
+      const res = await fetch(`${API}/question-answer-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: item.question }),
@@ -333,12 +349,42 @@ export default function App() {
         const err = await res.json()
         throw new Error(err.detail || 'Answer generation failed')
       }
-      const data = await res.json()
-      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [], validation: data.validation, run: data.run } : entry))
+      if (!res.body) throw new Error('Live question progress is unavailable')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let receivedResult = false
+      while (true) {
+        const { done, value } = await reader.read()
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+        const blocks = buffer.split('\n\n')
+        buffer = blocks.pop() ?? ''
+        for (const block of blocks) {
+          const line = block.split('\n').find(entry => entry.startsWith('data: '))
+          if (!line) continue
+          const event = JSON.parse(line.slice(6))
+          if (event.type === 'stage') {
+            const stage = event.stage as QuestionStageKey
+            setQuestionProgress(prev => prev ? {
+              ...prev,
+              steps: { ...prev.steps, [stage]: { state: event.status, detail: event.detail } },
+            } : prev)
+          } else if (event.type === 'result') {
+            const data = event.data
+            receivedResult = true
+            setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [], validation: data.validation, run: data.run } : entry))
+          } else if (event.type === 'error') {
+            throw new Error(event.message || 'Answer generation failed')
+          }
+        }
+        if (done) break
+      }
+      if (!receivedResult) throw new Error('Answer generation ended before completion')
     } catch (e: unknown) {
       setAnswerErrors(prev => ({ ...prev, [index]: e instanceof Error ? e.message : 'Something went wrong' }))
     } finally {
       setAnsweringIndex(null)
+      setQuestionProgress(prev => prev ? { ...prev, running: false } : prev)
     }
   }
 
@@ -670,37 +716,37 @@ export default function App() {
   }
 
   const activeResults = intel ? intel[activeTab] : []
-  const questionWorkflowItem = answeringIndex !== null
-    ? questionBatch[answeringIndex]
+  const questionWorkflowItem = questionProgress
+    ? questionBatch[questionProgress.questionIndex]
     : [...questionBatch].reverse().find(item => item.run) ?? questionBatch[0]
   const questionWorkflowSteps = [
     {
       number: '01',
       title: 'Research Reddit',
-      detail: questionWorkflowItem?.validation
+      detail: questionProgress?.steps.research.detail ?? (questionWorkflowItem?.validation
         ? `${questionWorkflowItem.validation.verified} verified threads across ${questionWorkflowItem.validation.communities} communities`
-        : 'Waiting for a question',
-      state: answeringIndex !== null ? 'active' : questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle',
+        : 'Waiting for a question'),
+      state: questionProgress?.steps.research.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle'),
     },
     {
       number: '02',
       title: 'Validate evidence',
-      detail: questionWorkflowItem?.validation?.retried ? 'Coverage was weak, so research ran again' : questionWorkflowItem?.validation ? 'Source coverage checked' : 'Source coverage will be checked',
-      state: answeringIndex !== null ? 'pending' : questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle',
+      detail: questionProgress?.steps.validate.detail ?? (questionWorkflowItem?.validation?.retried ? 'Coverage was weak, so research ran again' : questionWorkflowItem?.validation ? 'Source coverage checked' : 'Source coverage will be checked'),
+      state: questionProgress?.steps.validate.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle'),
     },
     {
       number: '03',
       title: 'Write answer',
-      detail: questionWorkflowItem?.run ? `${questionWorkflowItem.run.claims.length} source-backed claims mapped` : 'Answer will be mapped to sources',
-      state: answeringIndex !== null ? 'pending' : questionWorkflowItem?.run ? (questionWorkflowItem.run.attempts.find(a => a.stage === 'answer')?.passed ? 'passed' : 'review') : 'idle',
+      detail: questionProgress?.steps.answer.detail ?? (questionWorkflowItem?.run ? `${questionWorkflowItem.run.claims.length} source-backed claims mapped` : 'Answer will be mapped to sources'),
+      state: questionProgress?.steps.answer.state ?? (questionWorkflowItem?.run ? (questionWorkflowItem.run.attempts.find(a => a.stage === 'answer')?.passed ? 'passed' : 'review') : 'idle'),
     },
     {
       number: '04',
       title: 'Correct and check',
-      detail: questionWorkflowItem?.run?.attempts.some(a => a.stage === 'answer correction')
+      detail: questionProgress?.steps.correct.detail ?? (questionWorkflowItem?.run?.attempts.some(a => a.stage === 'answer correction')
         ? `Answer correction ${questionWorkflowItem.run.attempts.find(a => a.stage === 'answer correction')?.passed ? 'passed' : 'needs review'}`
-        : questionWorkflowItem?.run?.passed ? 'No correction needed' : 'Final check will run',
-      state: answeringIndex !== null ? 'pending' : questionWorkflowItem?.run ? (questionWorkflowItem.run.passed ? 'passed' : 'review') : 'idle',
+        : questionWorkflowItem?.run?.passed ? 'No correction needed' : 'Final check will run'),
+      state: questionProgress?.steps.correct.state ?? (questionWorkflowItem?.run ? (questionWorkflowItem.run.passed ? 'passed' : 'review') : 'idle'),
     },
   ] as const
 
@@ -903,9 +949,26 @@ export default function App() {
                               {renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}
                             </p>
                             {item.validation && (
-                              <p className={`mt-3 text-xs ${item.validation.passed ? 'text-[#9aa4b2]' : 'text-amber-300'}`}>
-                                Evidence check: {item.validation.verified} verified threads across {item.validation.communities} communities{item.validation.retried ? ' · refined once' : ''}{item.validation.passed ? '' : ' · limited coverage'}
-                              </p>
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${item.validation.passed ? 'border-[#50c878]/30 bg-[#50c878]/10 text-[#50c878]' : 'border-amber-300/30 bg-amber-300/10 text-amber-300'}`}>
+                                  Evidence score {item.validation.score}/100
+                                </span>
+                                <span className="text-xs text-[#9aa4b2]">{item.validation.verified} relevant threads · {item.validation.communities} communities{item.validation.retried ? ' · refined once' : ''}</span>
+                              </div>
+                            )}
+                            {item.run && (
+                              <div className={`mt-3 rounded-lg border px-3 py-2.5 ${item.run.checks?.some(check => !check.passed) ? 'border-amber-300/25 bg-amber-300/5' : 'border-[#30353e] bg-[#101114]'}`}>
+                                <p className={`text-xs font-medium ${item.run.checks?.some(check => !check.passed) ? 'text-amber-300' : 'text-[#50c878]'}`}>
+                                  {item.run.checks?.some(check => !check.passed)
+                                    ? `${item.run.checks.filter(check => !check.passed).length} failed check${item.run.checks.filter(check => !check.passed).length === 1 ? '' : 's'}`
+                                    : 'All checks passed'}
+                                </p>
+                                {item.run.checks?.filter(check => !check.passed).map(check => (
+                                  <p key={check.label} className="mt-1.5 text-xs text-[#9aa4b2]">
+                                    <span className="text-[#e8eaed]">{check.label}:</span> {check.detail}
+                                  </p>
+                                ))}
+                              </div>
                             )}
                             {!!item.sources?.length && (
                               <details className="mt-3">
@@ -913,7 +976,7 @@ export default function App() {
                                 <ol className="mt-2 space-y-1">
                                   {item.sources.map(src => (
                                     <li key={src.n} className="text-xs">
-                                      <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-[#ff6a33] hover:underline">[{src.n}] {src.title}</a>
+                                      <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-[#ff6a33] hover:underline">[S{src.n}] {src.title}</a>
                                       {src.site && <span className="text-[#6b7280]"> {src.site}</span>}
                                     </li>
                                   ))}
@@ -930,7 +993,7 @@ export default function App() {
                                     <p key={`${attempt.stage}-${attemptIndex}`}>{attempt.stage}: {attempt.passed ? 'passed' : 'failed'}{attempt.retried ? ' · refined once' : ''}</p>
                                   ))}
                                   {item.run.claims.map((claim, claimIndex) => (
-                                    <p key={`${claim.text}-${claimIndex}`}>[{claim.sources.join(', ')}] {claim.text}</p>
+                                    <p key={`${claim.text}-${claimIndex}`}>[{claim.sources.map(source => `S${source}`).join(', ')}] {claim.text}</p>
                                   ))}
                                 </div>
                               </details>
@@ -959,7 +1022,7 @@ export default function App() {
                   <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#747a84]">Question run</p>
                   <h3 className="mt-1 text-base font-semibold text-[#e8eaed]">How it checks itself</h3>
                 </div>
-                <span className={`w-2.5 h-2.5 rounded-full ${answeringIndex !== null ? 'bg-[#ff4500] animate-pulse' : questionWorkflowItem?.run?.passed ? 'bg-[#50c878]' : 'bg-[#5c6470]'}`} />
+                <span className={`w-2.5 h-2.5 rounded-full ${questionProgress?.running ? 'bg-[#ff4500] animate-pulse' : questionWorkflowItem?.run?.passed ? 'bg-[#50c878]' : 'bg-[#5c6470]'}`} />
               </div>
               <div className="mt-5">
                 {questionWorkflowSteps.map((step, index) => (

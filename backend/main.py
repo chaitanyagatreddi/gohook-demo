@@ -1,17 +1,18 @@
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
-from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review
+from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
-from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads, validate_question_answer
+from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
 from graph import ingest_threads, link_user_to_threads, read_graph
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
 import composio_reddit
-import os, re, httpx, logging
+import os, re, httpx, logging, json
 from fastapi import Header, Depends
 from dotenv import load_dotenv
 load_dotenv()
@@ -416,7 +417,7 @@ async def question_answer(req: QuestionAnswerRequest):
         answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
         attempts = [{"stage": "research", "passed": validation["passed"], "retried": validation["retried"]}, {"stage": "answer", "passed": answer_review["passed"]}]
         if results and not answer_review["passed"]:
-            feedback = "Each factual claim needs valid source IDs and every source ID must appear as a matching [n] citation."
+            feedback = "Each factual claim needs valid source IDs and every source ID must appear as a matching [S1] citation."
             answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
             answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
             attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
@@ -426,6 +427,138 @@ async def question_answer(req: QuestionAnswerRequest):
     except Exception:
         logger.exception("Question answer generation failed")
         raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")
+
+
+def _question_event(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
+    return [
+        {
+            "label": "Source relevance",
+            "passed": validation["score"] >= 60 and validation["verified"] >= 3,
+            "detail": f"Evidence score {validation['score']}/100 from {validation['verified']} relevant threads",
+        },
+        {
+            "label": "Community diversity",
+            "passed": validation["communities"] >= 2,
+            "detail": f"Evidence comes from {validation['communities']} communities",
+        },
+        {
+            "label": "Claim citations",
+            "passed": answer_review["passed"],
+            "detail": (
+                f"{answer_review['claim_count']} claims mapped to {answer_review['cited_sources']} sources"
+                if answer_review["passed"]
+                else f"{answer_review['invalid_claims']} invalid claims and {len(answer_review['invalid_citations'])} invalid citations"
+            ),
+        },
+    ]
+
+
+@app.post("/question-answer-stream")
+async def question_answer_stream(req: QuestionAnswerRequest):
+    """Run a question while reporting each real research and correction stage."""
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    async def events():
+        try:
+            yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Searching Reddit"})
+            initial = await search_web(req.question, limit=6, reddit_only=True)
+            yield _question_event({"type": "stage", "stage": "research", "status": "passed", "detail": f"{len(initial)} sources found"})
+
+            yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Scoring source relevance"})
+            candidates = verified_reddit_threads(initial)
+            evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
+            retried = not evidence["passed"]
+
+            if retried:
+                yield _question_event({"type": "stage", "stage": "validate", "status": "review", "detail": f"Evidence score {evidence['score']}/100; refining research"})
+                yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Running a focused second search"})
+                retry = await search_web(f"{req.question} experience discussion", limit=6, reddit_only=True)
+                candidates = verified_reddit_threads(initial + retry)
+                evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
+
+            results = evidence["relevant"][:6]
+            validation = {
+                "checked": len(initial) + (6 if retried else 0),
+                "verified": len(results),
+                "communities": evidence["communities"],
+                "score": evidence["score"],
+                "retried": retried,
+                "passed": evidence["passed"],
+            }
+            yield _question_event({
+                "type": "stage",
+                "stage": "research",
+                "status": "passed" if results else "review",
+                "detail": f"{len(results)} relevant threads across {validation['communities']} communities",
+            })
+            yield _question_event({
+                "type": "stage",
+                "stage": "validate",
+                "status": "passed" if validation["passed"] else "review",
+                "detail": f"Evidence score {validation['score']}/100" + (" · passed" if validation["passed"] else " · needs review"),
+            })
+
+            yield _question_event({"type": "stage", "stage": "answer", "status": "active", "detail": "Mapping claims to sources"})
+            if results:
+                answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
+            else:
+                answer = {
+                    "answer": "I couldn't find relevant Reddit evidence for this question, so I can't give a supported answer yet.",
+                    "claims": [],
+                    "sources": [],
+                    "sourced": False,
+                }
+            answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
+            attempts = [
+                {"stage": "research", "passed": validation["passed"], "retried": validation["retried"]},
+                {"stage": "answer", "passed": answer_review["passed"]},
+            ]
+            yield _question_event({
+                "type": "stage",
+                "stage": "answer",
+                "status": "passed" if answer_review["passed"] else "review",
+                "detail": f"{len(answer_review['claims'])} source-backed claims mapped",
+            })
+
+            if results and not answer_review["passed"]:
+                yield _question_event({"type": "stage", "stage": "correct", "status": "active", "detail": "Correcting unsupported citations"})
+                feedback = "Each factual claim needs valid source IDs and every source ID must appear as a matching [S1] citation."
+                answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
+                answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
+                attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
+                yield _question_event({
+                    "type": "stage",
+                    "stage": "correct",
+                    "status": "passed" if answer_review["passed"] else "review",
+                    "detail": "Corrected answer passed" if answer_review["passed"] else "Answer still needs review",
+                })
+            elif answer_review["passed"]:
+                yield _question_event({"type": "stage", "stage": "correct", "status": "passed", "detail": "No correction needed"})
+            else:
+                yield _question_event({"type": "stage", "stage": "correct", "status": "review", "detail": "Answer withheld: no relevant evidence"})
+
+            answer["validation"] = validation
+            answer["run"] = {
+                "passed": validation["passed"] and answer_review["passed"],
+                "claims": answer_review["claims"],
+                "attempts": attempts,
+                "checks": _question_checks(validation, answer_review),
+            }
+            yield _question_event({"type": "result", "data": answer})
+        except Exception:
+            logger.exception("Streaming question answer failed")
+            yield _question_event({"type": "error", "message": "Answer generation failed. Please try again."})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/draft")
