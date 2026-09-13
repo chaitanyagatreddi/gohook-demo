@@ -494,6 +494,15 @@ export default function App() {
     else setAuthSent(true)
   }
 
+  async function signInWithGoogle() {
+    setAuthError('')
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) setAuthError(error.message)
+  }
+
   async function connectZernio() {
     if (!zernioKeyInput.trim()) return
     setZernioConnecting(true)
@@ -1108,6 +1117,12 @@ export default function App() {
                     className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
                   >
                     {authSent ? 'Check your email ✓' : 'Sign in with email'}
+                  </button>
+                  <button
+                    onClick={signInWithGoogle}
+                    className="border border-[#30353e] hover:border-[#ff4500]/60 text-[#e8eaed] px-4 py-2 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    Continue with Google
                   </button>
                   {authError && <p className="text-xs text-red-400">{authError}</p>}
                 </div>
