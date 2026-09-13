@@ -510,11 +510,11 @@ async def question_answer_stream(req: QuestionAnswerRequest):
             })
 
             yield _question_event({"type": "stage", "stage": "answer", "status": "active", "detail": "Mapping claims to sources"})
-            if results:
+            if validation["passed"] and results:
                 answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
             else:
                 answer = {
-                    "answer": "I couldn't find relevant Reddit evidence for this question, so I can't give a supported answer yet.",
+                    "answer": "I couldn't find enough relevant Reddit evidence to give a reliable answer to this question.",
                     "claims": [],
                     "sources": [],
                     "sourced": False,
@@ -531,7 +531,7 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                 "detail": f"{len(answer_review['claims'])} source-backed claims mapped",
             })
 
-            if results and not answer_review["passed"]:
+            if validation["passed"] and results and not answer_review["passed"]:
                 yield _question_event({"type": "stage", "stage": "correct", "status": "active", "detail": "Correcting unsupported citations"})
                 feedback = "Every factual claim needs valid source IDs, every source ID must appear as a matching [S1] citation, and every citation in the answer must be represented in the claims map."
                 answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
@@ -543,10 +543,10 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                     "status": "passed" if answer_review["passed"] else "review",
                     "detail": "Corrected answer passed" if answer_review["passed"] else "Answer still needs review",
                 })
-            elif answer_review["passed"]:
+            elif validation["passed"] and answer_review["passed"]:
                 yield _question_event({"type": "stage", "stage": "correct", "status": "passed", "detail": "No correction needed"})
             else:
-                yield _question_event({"type": "stage", "stage": "correct", "status": "review", "detail": "Answer withheld: no relevant evidence"})
+                yield _question_event({"type": "stage", "stage": "correct", "status": "review", "detail": "Answer withheld: evidence remains below threshold"})
 
             answer["validation"] = validation
             answer["run"] = {
