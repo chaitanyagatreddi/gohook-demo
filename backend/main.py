@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
-from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
+from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
 from graph import ingest_threads, link_user_to_threads, read_graph
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -426,6 +426,12 @@ class QuestionAnswerRequest(BaseModel):
     question: str
 
 
+class QuestionFollowUpRequest(BaseModel):
+    question: str
+    answer: str
+    failed_checks: Optional[List[str]] = None
+
+
 @app.post("/question-batch")
 def question_batch(req: QuestionBatchRequest):
     if not req.brief.strip():
@@ -468,6 +474,28 @@ async def question_answer(
     except Exception:
         logger.exception("Question answer generation failed")
         raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")
+
+
+@app.post("/question-follow-up")
+async def question_follow_up(
+    req: QuestionFollowUpRequest,
+    identity: Optional[dict] = Depends(get_current_identity),
+):
+    if not await has_scott_access(identity):
+        raise HTTPException(status_code=403, detail="Scott access is required.")
+    if not req.question.strip() or not req.answer.strip():
+        raise HTTPException(status_code=400, detail="Question and answer are required.")
+    try:
+        follow_up = await run_in_threadpool(
+            generate_question_follow_up,
+            req.question,
+            req.answer,
+            req.failed_checks or [],
+        )
+        return {"question": follow_up}
+    except Exception:
+        logger.exception("Follow-up question generation failed")
+        raise HTTPException(status_code=500, detail="Could not create the next layer. Please try again.")
 
 
 def _question_event(payload: dict) -> str:

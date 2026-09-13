@@ -115,7 +115,7 @@ type QuestionValidation = { checked: number; verified: number; communities: numb
 type QuestionClaim = { text: string; sources: number[] }
 type QuestionCheck = { label: string; passed: boolean; detail: string }
 type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[] }
-type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun }
+type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun; layer?: number; parentScore?: number; scoreDelta?: number }
 type QuestionStageKey = 'research' | 'validate' | 'answer' | 'correct'
 type QuestionStage = { state: 'idle' | 'active' | 'passed' | 'review'; detail: string }
 type QuestionProgress = { questionIndex: number; running: boolean; steps: Record<QuestionStageKey, QuestionStage> }
@@ -320,17 +320,17 @@ export default function App() {
   function createQuestionBatch() {
     const questions = questionBrief.split('\n').map(question => question.trim()).filter(Boolean)
     setQuestionBatchError('')
-    if (questions.length < 2 || questions.length > 3) {
-      setQuestionBatchError('Enter 2 or 3 questions, one per line.')
+    if (questions.length < 1 || questions.length > 3) {
+      setQuestionBatchError('Enter 1 to 3 questions, one per line.')
       return
     }
     setAnswerErrors({})
     setQuestionProgress(null)
-    setQuestionBatch(questions.map(question => ({ question })))
+    setQuestionBatch(questions.map(question => ({ question, layer: 1 })))
   }
 
-  async function generateAnswer(index: number) {
-    const item = questionBatch[index]
+  async function generateAnswer(index: number, overrideItem?: QuestionAnswer) {
+    const item = overrideItem ?? questionBatch[index]
     if (!item) return
     setAnsweringIndex(index)
     setAnswerErrors(prev => ({ ...prev, [index]: '' }))
@@ -379,7 +379,14 @@ export default function App() {
           } else if (event.type === 'result') {
             const data = event.data
             receivedResult = true
-            setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [], validation: data.validation, run: data.run } : entry))
+            setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? {
+              ...entry,
+              answer: data.answer,
+              sources: data.sources ?? [],
+              validation: data.validation,
+              run: data.run,
+              scoreDelta: entry.parentScore === undefined || !data.validation ? undefined : data.validation.score - entry.parentScore,
+            } : entry))
           } else if (event.type === 'error') {
             throw new Error(event.message || 'Answer generation failed')
           }
@@ -392,6 +399,39 @@ export default function App() {
     } finally {
       setAnsweringIndex(null)
       setQuestionProgress(prev => prev ? { ...prev, running: false } : prev)
+    }
+  }
+
+  async function runNextLayer(index: number) {
+    const item = questionBatch[index]
+    if (!item?.answer || !item.validation || (item.layer ?? 1) >= 3) return
+    setAnsweringIndex(index)
+    setAnswerErrors(prev => ({ ...prev, [index]: '' }))
+    try {
+      const auth = await authHeaders()
+      const failedChecks = (item.run?.checks ?? []).filter(check => !check.passed).map(check => `${check.label}: ${check.detail}`)
+      const response = await fetch(`${API}/question-follow-up`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ question: item.question, answer: item.answer, failed_checks: failedChecks }),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Could not create the next layer')
+      }
+      const data = await response.json()
+      const nextItem: QuestionAnswer = {
+        question: data.question,
+        layer: (item.layer ?? 1) + 1,
+        parentScore: item.validation.score,
+      }
+      const nextIndex = questionBatch.length
+      setQuestionBatch(prev => [...prev, nextItem])
+      setAnsweringIndex(null)
+      await generateAnswer(nextIndex, nextItem)
+    } catch (error: unknown) {
+      setAnswerErrors(prev => ({ ...prev, [index]: error instanceof Error ? error.message : 'Could not create the next layer' }))
+      setAnsweringIndex(null)
     }
   }
 
@@ -926,7 +966,7 @@ export default function App() {
             <div className="min-w-0">
             <div className="border-b border-[#242a33] pb-6">
               <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
-              <p className="text-sm text-[#9aa4b2] mt-2">Enter 2 or 3 questions, one per line. Generate each answer individually.</p>
+              <p className="text-sm text-[#9aa4b2] mt-2">Enter 1 to 3 questions, one per line. Generate each answer individually.</p>
             </div>
             <div className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
               <textarea
@@ -942,7 +982,7 @@ export default function App() {
                   disabled={!questionBrief.trim()}
                   className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-colors"
                 >
-                  Create question batch
+                    {questionBrief.split('\n').map(question => question.trim()).filter(Boolean).length === 1 ? 'Start question' : 'Create question batch'}
                 </button>
               </div>
             </div>
@@ -989,7 +1029,7 @@ export default function App() {
                         className="accent-[#ff4500] w-4 h-4 mt-1 flex-none"
                         title="Pick this one"
                       />
-                      <span className="text-xs text-[#ff6a33] font-mono pt-1">0{index + 1}</span>
+                      <span className="text-xs text-[#ff6a33] font-mono pt-1">L{item.layer ?? 1}</span>
                       <div>
                         <h3 className="text-base font-semibold text-[#e8eaed]">{item.question}</h3>
                         {item.answer ? (
@@ -1003,6 +1043,11 @@ export default function App() {
                                   Evidence score {item.validation.score}/100
                                 </span>
                                 <span className="text-xs text-[#9aa4b2]">{item.validation.verified} relevant threads · {item.validation.communities} communities{item.validation.retried ? ' · refined once' : ''}</span>
+                                {item.scoreDelta !== undefined && (
+                                  <span className={`text-xs font-semibold ${item.scoreDelta > 0 ? 'text-[#50c878]' : 'text-amber-300'}`}>
+                                    {item.scoreDelta > 0 ? '+' : ''}{item.scoreDelta} from previous layer
+                                  </span>
+                                )}
                               </div>
                             )}
                             {scottActive && item.run && (
@@ -1031,6 +1076,18 @@ export default function App() {
                                   ))}
                                 </ol>
                               </details>
+                            )}
+                            {scottActive && item.validation && (item.layer ?? 1) < 3 && (item.scoreDelta === undefined || item.scoreDelta > 0) && (
+                              <button
+                                onClick={() => runNextLayer(index)}
+                                disabled={answeringIndex !== null}
+                                className="mt-4 border border-[#ff4500] text-[#ff6a33] hover:bg-[#ff4500]/10 px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-colors"
+                              >
+                                {answeringIndex === index ? 'Building next layer…' : 'Run next layer'}
+                              </button>
+                            )}
+                            {scottActive && item.scoreDelta !== undefined && item.scoreDelta <= 0 && (
+                              <p className="mt-4 text-xs text-amber-300">Stopped: this layer did not improve the evidence score.</p>
                             )}
                             {scottActive && item.run && (
                               <details className="mt-3">

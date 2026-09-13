@@ -346,6 +346,37 @@ def generate_question_answer(brief: str, question: str, results: Optional[List[d
         "sourced": bool(results),
     }
 
+
+FOLLOW_UP_QUESTION_SYSTEM_PROMPT = """Create one focused follow-up research question that can improve the evidence behind a prior answer.
+
+Rules:
+- Target the weakest, unsupported, or unresolved part of the prior answer.
+- Ask for evidence that could confirm, challenge, or narrow the answer.
+- Do not repeat the original question.
+- Return only the follow-up question, with no preamble.
+"""
+
+
+def generate_question_follow_up(question: str, answer: str, failed_checks: List[str]) -> str:
+    """Generate the next evidence-seeking question for a recursive research run."""
+    checks = "\n".join(f"- {check}" for check in failed_checks) or "- Find stronger and more complete evidence."
+    resp = get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": FOLLOW_UP_QUESTION_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Original question:\n{question.strip()}\n\nPrior answer:\n{answer.strip()}\n\nChecks to improve:\n{checks}",
+            },
+        ],
+        temperature=0.2,
+        max_tokens=160,
+    )
+    follow_up = resp.choices[0].message.content.strip()
+    if not follow_up:
+        raise ValueError("Follow-up question was empty")
+    return follow_up
+
 PLAN_QUERIES_SYSTEM_PROMPT = """You turn a user's question into Google searches that find relevant Reddit threads.
 
 Return JSON: {"queries": [3 to 5 short search strings], "intent": one of "comparison", "pain", "recommendation", "pricing", "general"}
