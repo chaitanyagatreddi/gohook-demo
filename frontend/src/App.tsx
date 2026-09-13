@@ -670,6 +670,39 @@ export default function App() {
   }
 
   const activeResults = intel ? intel[activeTab] : []
+  const questionWorkflowItem = answeringIndex !== null
+    ? questionBatch[answeringIndex]
+    : [...questionBatch].reverse().find(item => item.run) ?? questionBatch[0]
+  const questionWorkflowSteps = [
+    {
+      number: '01',
+      title: 'Research Reddit',
+      detail: questionWorkflowItem?.validation
+        ? `${questionWorkflowItem.validation.verified} verified threads across ${questionWorkflowItem.validation.communities} communities`
+        : 'Waiting for a question',
+      state: answeringIndex !== null ? 'active' : questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle',
+    },
+    {
+      number: '02',
+      title: 'Validate evidence',
+      detail: questionWorkflowItem?.validation?.retried ? 'Coverage was weak, so research ran again' : questionWorkflowItem?.validation ? 'Source coverage checked' : 'Source coverage will be checked',
+      state: answeringIndex !== null ? 'pending' : questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle',
+    },
+    {
+      number: '03',
+      title: 'Write answer',
+      detail: questionWorkflowItem?.run ? `${questionWorkflowItem.run.claims.length} source-backed claims mapped` : 'Answer will be mapped to sources',
+      state: answeringIndex !== null ? 'pending' : questionWorkflowItem?.run ? (questionWorkflowItem.run.attempts.find(a => a.stage === 'answer')?.passed ? 'passed' : 'review') : 'idle',
+    },
+    {
+      number: '04',
+      title: 'Correct and check',
+      detail: questionWorkflowItem?.run?.attempts.some(a => a.stage === 'answer correction')
+        ? `Answer correction ${questionWorkflowItem.run.attempts.find(a => a.stage === 'answer correction')?.passed ? 'passed' : 'needs review'}`
+        : questionWorkflowItem?.run?.passed ? 'No correction needed' : 'Final check will run',
+      state: answeringIndex !== null ? 'pending' : questionWorkflowItem?.run ? (questionWorkflowItem.run.passed ? 'passed' : 'review') : 'idle',
+    },
+  ] as const
 
   return (
     <div className="min-h-screen bg-[#0a0b0d] text-[#f1f2f4] flex items-start">
@@ -794,7 +827,8 @@ export default function App() {
         {view === 'board' && <Board board={board} setBoard={setBoard} onGoToResults={() => setView('results')} />}
 
         {view === 'questions' && (
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+            <div className="min-w-0">
             <div className="border-b border-[#242a33] pb-6">
               <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
               <p className="text-sm text-[#9aa4b2] mt-2">Enter 2 or 3 questions, one per line. Generate each answer individually.</p>
@@ -918,6 +952,30 @@ export default function App() {
                 ))}
               </div>
             )}
+            </div>
+            <aside className="lg:sticky lg:top-8 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
+              <div className="flex items-center justify-between pb-4 border-b border-[#242a33]">
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#747a84]">Question run</p>
+                  <h3 className="mt-1 text-base font-semibold text-[#e8eaed]">How it checks itself</h3>
+                </div>
+                <span className={`w-2.5 h-2.5 rounded-full ${answeringIndex !== null ? 'bg-[#ff4500] animate-pulse' : questionWorkflowItem?.run?.passed ? 'bg-[#50c878]' : 'bg-[#5c6470]'}`} />
+              </div>
+              <div className="mt-5">
+                {questionWorkflowSteps.map((step, index) => (
+                  <div key={step.number} className="relative flex gap-3 pb-5 last:pb-0">
+                    {index < questionWorkflowSteps.length - 1 && <div className="absolute left-[15px] top-8 bottom-0 w-px bg-[#30353e]" />}
+                    <div className={`relative z-10 w-8 h-8 rounded-lg border flex items-center justify-center text-[10px] font-semibold ${step.state === 'passed' ? 'border-[#50c878]/40 bg-[#50c878]/10 text-[#50c878]' : step.state === 'active' ? 'border-[#ff4500]/50 bg-[#ff4500]/10 text-[#ff6a33]' : step.state === 'review' ? 'border-amber-300/40 bg-amber-300/10 text-amber-300' : 'border-[#30353e] bg-[#101114] text-[#747a84]'}`}>
+                      {step.state === 'passed' ? '✓' : step.number}
+                    </div>
+                    <div className="pt-0.5 min-w-0">
+                      <p className="text-sm font-medium text-[#e8eaed]">{step.title}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-[#9aa4b2]">{step.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </aside>
           </div>
         )}
 
