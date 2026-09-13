@@ -1077,7 +1077,7 @@ export default function App() {
                                 </ol>
                               </details>
                             )}
-                            {scottActive && item.validation && (item.layer ?? 1) < 3 && (item.scoreDelta === undefined || item.scoreDelta > 0) && (
+                            {scottActive && item.validation?.passed && (item.layer ?? 1) < 3 && (item.scoreDelta === undefined || item.scoreDelta > 0) && (
                               <button
                                 onClick={() => runNextLayer(index)}
                                 disabled={answeringIndex !== null}
@@ -1086,8 +1086,11 @@ export default function App() {
                                 {answeringIndex === index ? 'Building next layer…' : 'Run next layer'}
                               </button>
                             )}
-                            {scottActive && item.scoreDelta !== undefined && item.scoreDelta <= 0 && (
+                            {scottActive && item.validation?.passed && item.scoreDelta !== undefined && item.scoreDelta <= 0 && (
                               <p className="mt-4 text-xs text-amber-300">Stopped: this layer did not improve the evidence score.</p>
+                            )}
+                            {scottActive && item.validation && !item.validation.passed && (
+                              <p className="mt-4 text-xs text-amber-300">Stopped: this layer did not produce usable evidence.</p>
                             )}
                             {scottActive && item.run && (
                               <details className="mt-3">
