@@ -51,7 +51,7 @@ export default function Board({
 
   if (board.length === 0) {
     return (
-      <div className="mt-8 text-center py-16 border border-dashed border-[#242a33] rounded-xl">
+      <div className="mt-2 text-center py-16 border border-dashed border-[#30333a] bg-[#101114] rounded-xl">
         <p className="text-[#9aa4b2] text-sm">No signals on the board yet.</p>
         <p className="text-[#6b7280] text-xs mt-1">
           Scan a product, then hit <button onClick={onGoToResults} className="text-[#ff6a33] hover:underline">+ Board</button> on any result to triage it here.
@@ -61,7 +61,7 @@ export default function Board({
   }
 
   return (
-    <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
       {COLUMNS.map(col => {
         const cards = board.filter(c => c.column === col.key)
         return (
@@ -74,33 +74,33 @@ export default function Board({
               setDragId(null)
               setOverCol(null)
             }}
-            className={`rounded-xl border p-3 min-h-[200px] transition-colors ${
-              overCol === col.key ? 'border-[#ff4500] bg-[#ff4500]/5' : 'border-[#242a33] bg-[#14171c]'
+            className={`rounded-xl border p-4 min-h-[560px] transition-colors ${
+              overCol === col.key ? 'border-[#ff6a33] bg-[#ff6a33]/5' : 'border-[#2a2d33] bg-[#121417] shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
             }`}
           >
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-[#9aa4b2]">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#25282e]">
+              <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#858b95]">
                 {col.label}
               </h4>
-              <span className="text-[11px] bg-[#0b0d10] border border-[#242a33] text-[#9aa4b2] rounded-full px-2 py-0.5">
+              <span className="text-[11px] bg-[#0d0f12] border border-[#292c32] text-[#9aa4b2] rounded-full px-2 py-0.5 tabular-nums">
                 {cards.length}
               </span>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               {cards.map(card => (
                 <div
                   key={card.id}
                   draggable
                   onDragStart={() => setDragId(card.id)}
                   onDragEnd={() => { setDragId(null); setOverCol(null) }}
-                  className={`group rounded-lg border border-[#242a33] bg-[#0b0d10] p-3 cursor-grab active:cursor-grabbing ${
+                  className={`group rounded-xl border border-[#2a2d33] bg-[#0d0f12] p-4 cursor-grab active:cursor-grabbing shadow-[0_8px_18px_rgba(0,0,0,0.16)] transition-colors hover:border-[#3b3f47] ${
                     dragId === card.id ? 'opacity-50' : ''
                   }`}
                 >
-                  {card.title && <p className="text-[13px] font-semibold text-[#e8eaed] mb-1">{card.title}</p>}
-                  <p className="text-[13px] text-[#e8eaed] leading-snug line-clamp-4">{card.text}</p>
-                  <div className="mt-2 flex items-center gap-2 text-[11px] text-[#9aa4b2]">
+                  {card.title && <p className="text-sm font-semibold text-[#e8eaed] mb-1.5 leading-snug">{card.title}</p>}
+                  <p className="text-[13px] text-[#d7dbe1] leading-relaxed line-clamp-4">{card.text}</p>
+                  <div className="mt-3 flex items-center gap-2 text-[11px] text-[#9aa4b2]">
                     <span>{card.subreddit}</span>
                     {card.reddit_score > 0 && <span>▲ {card.reddit_score}</span>}
                     {card.origin && (
@@ -109,7 +109,7 @@ export default function Board({
                       </span>
                     )}
                   </div>
-                  <div className="mt-2 flex items-center gap-3 text-[11px]">
+                  <div className="mt-3 flex items-center gap-3 text-[11px]">
                     <a
                       href={card.source_url}
                       target="_blank"

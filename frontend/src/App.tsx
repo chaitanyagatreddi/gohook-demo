@@ -735,7 +735,7 @@ export default function App() {
       ) : view === 'graph' ? (
         <Graph signedIn={!!session} onSignIn={() => setShowAuthGate(true)} />
       ) : (
-      <div className="max-w-3xl mx-auto px-4 py-10">
+      <div className={`${view === 'board' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-4 py-10`}>
         {/* Hero + search bar */}
         {!intel && !loading && searches.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
