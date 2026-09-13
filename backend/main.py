@@ -110,15 +110,19 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
 
 async def has_scott_access(identity: Optional[dict]) -> bool:
     if not identity:
+        logger.info("Scott access denied: no authenticated identity")
         return False
     email = str((identity or {}).get("email", "")).strip().lower()
     if email and email in SCOTT_ACCESS_EMAILS:
+        logger.info("Scott access granted through approved email")
         return True
     if not SCOTT_ACCESS_REDDIT_USERNAMES:
         return False
     connection = await composio_reddit.read_connection(identity["id"])
     username = str((connection or {}).get("reddit_username", "")).strip().lower()
-    return bool(username and username in SCOTT_ACCESS_REDDIT_USERNAMES)
+    granted = bool(username and username in SCOTT_ACCESS_REDDIT_USERNAMES)
+    logger.info("Scott access checked through linked Reddit account: granted=%s", granted)
+    return granted
 
 
 async def require_user(authorization: Optional[str] = Header(None)):
