@@ -4,6 +4,7 @@ Uses OpenAI gpt-4o-mini (cheap, fast).
 """
 import json
 import os
+import re
 from typing import Optional, List
 from openai import OpenAI
 
@@ -182,32 +183,50 @@ def generate_question_batch(brief: str) -> dict:
     return {"questions": questions}
 
 
-SOURCED_ANSWER_SYSTEM_PROMPT = """Answer the question using ONLY the search results supplied, in about 5 to 6 lines.
+SOURCED_ANSWER_SYSTEM_PROMPT = """Answer the question using ONLY the supplied Reddit results.
 
-Shape:
-- Open with the direct answer in one sentence.
-- Then the detail that makes it useful: the numbers, the names, the caveat, what changed.
-- Finish with the practical takeaway if there is one.
+Return valid JSON only in this exact shape:
+{"answer":"5 to 6 concise lines with [n] source citations","claims":[{"text":"one factual claim","sources":[1,2]}]}
 
 Rules:
-- Every fact must come from the results. Never add a number, name or date that is not there.
-- Mark each fact with the source it came from, like [2], matching the numbers given.
-- If the results disagree, say so and give both.
-- If the results do not answer the question, say plainly that you could not find it.
-  Do not fall back on what you remember.
-- Where a figure has a date attached, say the date — "as of 2024" — rather than
-  implying it is today's number.
-- Output only the answer. No headings, no bullet characters."""
+- Every factual claim must use one or more source numbers from the supplied results.
+- Every source number in a claim must appear in the answer as [n].
+- If evidence is incomplete or disagrees, say so plainly in the answer.
+- Never add a fact, name, number, or date that is not in the supplied results.
+- Do not include markdown headings or bullets in the answer.
+"""
+
+def validate_question_answer(answer: str, claims: object, source_count: int) -> dict:
+    """Check that an answer has a usable, source-backed claim map."""
+    cited = {int(n) for n in re.findall(r"\[(\d+)\]", answer)}
+    valid_citations = {n for n in cited if 1 <= n <= source_count}
+    invalid_citations = sorted(cited - valid_citations)
+    valid_claims = []
+    invalid_claims = 0
+    if isinstance(claims, list):
+        for claim in claims:
+            if not isinstance(claim, dict) or not isinstance(claim.get("text"), str):
+                invalid_claims += 1
+                continue
+            refs = claim.get("sources")
+            if not isinstance(refs, list) or not refs or any(not isinstance(n, int) or n not in valid_citations for n in refs):
+                invalid_claims += 1
+                continue
+            valid_claims.append({"text": claim["text"], "sources": refs})
+    else:
+        invalid_claims = 1
+    return {
+        "passed": bool(answer.strip()) and source_count > 0 and bool(valid_claims) and not invalid_citations and not invalid_claims,
+        "claims": valid_claims,
+        "claim_count": len(valid_claims),
+        "cited_sources": len(valid_citations),
+        "invalid_claims": invalid_claims,
+        "invalid_citations": invalid_citations,
+    }
 
 
-def generate_question_answer(brief: str, question: str, results: Optional[List[dict]] = None) -> dict:
-    """
-    Answer one question.
-
-    With `results` (from a web search) the answer is built only from those and
-    carries [n] marks. Without them it falls back to the model's own knowledge,
-    which is not sourced.
-    """
+def generate_question_answer(brief: str, question: str, results: Optional[List[dict]] = None, feedback: str = "") -> dict:
+    """Generate a source-backed answer and its structured claim map."""
     if results:
         listed = "\n\n".join(
             f"[{i}] {r.get('title','')} — {r.get('site','')}"
@@ -217,43 +236,47 @@ def generate_question_answer(brief: str, question: str, results: Optional[List[d
         )
         context = f"Context:\n{brief.strip()}\n\n" if brief.strip() else ""
         user = f"{context}Search results:\n{listed}\n\nQuestion:\n{question.strip()}"
+        if feedback:
+            user += f"\n\nValidation feedback from the prior attempt:\n{feedback}\nReturn a corrected JSON response."
         system = SOURCED_ANSWER_SYSTEM_PROMPT
     else:
         context = f"Context:\n{brief.strip()}\n\n" if brief.strip() else ""
         user = f"{context}Question:\n{question.strip()}"
         system = QUESTION_ANSWER_SYSTEM_PROMPT
 
-    resp = get_client().chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.2 if results else 0.4,
-        max_tokens=600,
-    )
-    answer = resp.choices[0].message.content.strip()
+    request = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "temperature": 0.2 if results else 0.4,
+        "max_tokens": 600,
+    }
+    if results:
+        request["response_format"] = {"type": "json_object"}
+    resp = get_client().chat.completions.create(**request)
+    content = resp.choices[0].message.content.strip()
+    if not content:
+        raise ValueError("Question answer was empty")
+    if results:
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Question answer was not valid JSON") from exc
+        answer = str(payload.get("answer", "")).strip()
+        claims = payload.get("claims", [])
+    else:
+        answer, claims = content, []
     if not answer:
         raise ValueError("Question answer was empty")
 
     return {
         "answer": answer,
+        "claims": claims,
         "sources": [
-            {
-                "n": i,
-                "title": r.get("title", ""),
-                "url": r.get("url", ""),
-                "site": r.get("site", ""),
-                "date": r.get("date", ""),
-                "permalink": r.get("permalink", ""),
-                "subreddit_name_prefixed": r.get("subreddit_name_prefixed", ""),
-                "selftext": r.get("selftext", ""),
-            }
+            {"n": i, "title": r.get("title", ""), "url": r.get("url", ""), "site": r.get("site", ""), "date": r.get("date", ""), "permalink": r.get("permalink", ""), "subreddit_name_prefixed": r.get("subreddit_name_prefixed", ""), "selftext": r.get("selftext", "")}
             for i, r in enumerate(results or [], 1)
         ],
         "sourced": bool(results),
     }
-
 
 PLAN_QUERIES_SYSTEM_PROMPT = """You turn a user's question into Google searches that find relevant Reddit threads.
 

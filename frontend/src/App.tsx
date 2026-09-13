@@ -112,7 +112,9 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 type Draft = { draft: string; word_count: number; tone: string }
 type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
 type QuestionValidation = { checked: number; verified: number; communities: number; retried: boolean; passed: boolean }
-type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation }
+type QuestionClaim = { text: string; sources: number[] }
+type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[] }
+type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
   pricing: { icon: '💰', label: 'Pricing' },
@@ -332,7 +334,7 @@ export default function App() {
         throw new Error(err.detail || 'Answer generation failed')
       }
       const data = await res.json()
-      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [], validation: data.validation } : entry))
+      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [], validation: data.validation, run: data.run } : entry))
     } catch (e: unknown) {
       setAnswerErrors(prev => ({ ...prev, [index]: e instanceof Error ? e.message : 'Something went wrong' }))
     } finally {
@@ -882,6 +884,21 @@ export default function App() {
                                     </li>
                                   ))}
                                 </ol>
+                              </details>
+                            )}
+                            {item.run && (
+                              <details className="mt-3">
+                                <summary className={`text-xs cursor-pointer ${item.run.passed ? 'text-[#9aa4b2]' : 'text-amber-300'}`}>
+                                  Evidence and attempts · {item.run.passed ? 'passed' : 'needs review'}
+                                </summary>
+                                <div className="mt-2 space-y-1 text-xs text-[#9aa4b2]">
+                                  {item.run.attempts.map((attempt, attemptIndex) => (
+                                    <p key={`${attempt.stage}-${attemptIndex}`}>{attempt.stage}: {attempt.passed ? 'passed' : 'failed'}{attempt.retried ? ' · refined once' : ''}</p>
+                                  ))}
+                                  {item.run.claims.map((claim, claimIndex) => (
+                                    <p key={`${claim.text}-${claimIndex}`}>[{claim.sources.join(', ')}] {claim.text}</p>
+                                  ))}
+                                </div>
                               </details>
                             )}
                           </>

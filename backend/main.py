@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review
 from extractors import extract_intel
-from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads
+from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads, validate_question_answer
 from graph import ingest_threads, link_user_to_threads, read_graph
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -413,7 +413,15 @@ async def question_answer(req: QuestionAnswerRequest):
 
     try:
         answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
+        answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
+        attempts = [{"stage": "research", "passed": validation["passed"], "retried": validation["retried"]}, {"stage": "answer", "passed": answer_review["passed"]}]
+        if results and not answer_review["passed"]:
+            feedback = "Each factual claim needs valid source IDs and every source ID must appear as a matching [n] citation."
+            answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
+            answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
+            attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
         answer["validation"] = validation
+        answer["run"] = {"passed": validation["passed"] and answer_review["passed"], "claims": answer_review["claims"], "attempts": attempts}
         return answer
     except Exception:
         logger.exception("Question answer generation failed")
