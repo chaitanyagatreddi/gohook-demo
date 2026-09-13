@@ -445,9 +445,25 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
   // Not signed in: there is nothing to show, because a graph belongs to a person.
   if (!signedIn) {
     return (
-      <main className="flex-1 min-w-0 h-screen flex items-center justify-center px-6">
-        <div className="max-w-md text-center">
-          <div className="mx-auto mb-5 w-12 h-12 rounded-xl bg-[#14171c] border border-[#242a33] grid place-items-center">
+      <main className="relative flex-1 min-w-0 h-screen overflow-hidden flex items-center justify-center px-6 bg-[#0a0b0d]">
+        <svg aria-hidden="true" viewBox="0 0 1000 700" className="absolute w-[min(1100px,92vw)] h-auto opacity-60">
+          <g stroke="rgba(148,163,184,0.26)" strokeWidth="1">
+            <path d="M110 350L245 210L405 300L560 150L730 265L900 125" />
+            <path d="M110 350L270 505L405 300L540 495L730 265L895 470" />
+            <path d="M245 210L270 505M245 210L560 150M405 300L730 265M405 300L645 385M540 495L645 385M645 385L895 470M730 265L895 470" />
+          </g>
+          <g fill="#ff6a33">
+            <circle cx="110" cy="350" r="7" /><circle cx="405" cy="300" r="8" /><circle cx="730" cy="265" r="7" />
+          </g>
+          <g fill="#8fa4ff">
+            <circle cx="245" cy="210" r="5" /><circle cx="560" cy="150" r="6" /><circle cx="270" cy="505" r="5" /><circle cx="895" cy="470" r="5" />
+          </g>
+          <g fill="#e879f9">
+            <circle cx="900" cy="125" r="5" /><circle cx="540" cy="495" r="6" /><circle cx="645" cy="385" r="5" />
+          </g>
+        </svg>
+        <div className="relative max-w-md text-center rounded-2xl border border-white/[0.07] bg-[#111216]/80 px-8 py-7 shadow-[0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+          <div className="mx-auto mb-5 w-12 h-12 rounded-xl bg-[#17191e] border border-[#2a2d33] grid place-items-center">
             <svg viewBox="0 0 24 24" fill="none" stroke="#ff6a33" strokeWidth="1.6" className="w-6 h-6">
               <circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="12" cy="17" r="2.5" />
               <path d="M8 7.5l8 -0.5M7.2 8.2L11 14.8M16.8 9.2L13 14.8" />
