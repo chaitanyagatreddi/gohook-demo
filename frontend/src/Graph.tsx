@@ -49,10 +49,10 @@ function layout(nodes: Placed[], edges: GraphEdge[], width: number, height: numb
   const cy = height / 2
 
   for (const n of nodes) {
-    n.vx *= 0.82
-    n.vy *= 0.82
-    n.vx += (cx - n.x) * 0.0018
-    n.vy += (cy - n.y) * 0.0018
+    n.vx *= 0.84
+    n.vy *= 0.84
+    n.vx += (cx - n.x) * 0.0014
+    n.vy += (cy - n.y) * 0.0014
   }
 
   for (let i = 0; i < nodes.length; i++) {
@@ -62,8 +62,8 @@ function layout(nodes: Placed[], edges: GraphEdge[], width: number, height: numb
       const dx = b.x - a.x
       const dy = b.y - a.y
       const d2 = dx * dx + dy * dy || 0.01
-      if (d2 > 40000) continue // far apart, ignore
-      const push = 700 / d2
+      if (d2 > 57600) continue // far apart, ignore
+      const push = 1100 / d2
       const d = Math.sqrt(d2)
       const ux = (dx / d) * push
       const uy = (dy / d) * push
@@ -79,14 +79,14 @@ function layout(nodes: Placed[], edges: GraphEdge[], width: number, height: numb
     const dx = b.x - a.x
     const dy = b.y - a.y
     const d = Math.sqrt(dx * dx + dy * dy) || 0.01
-    const pull = (d - 90) * 0.008
+    const pull = (d - 125) * 0.0065
     const ux = (dx / d) * pull
     const uy = (dy / d) * pull
     a.vx += ux; a.vy += uy
     b.vx -= ux; b.vy -= uy
   }
 
-  const margin = 40
+  const margin = 46
   for (const n of nodes) {
     // Near an edge, push steadily back towards the middle. A bounce alone let
     // dots settle against the wall and pile up in a line.
@@ -95,8 +95,8 @@ function layout(nodes: Placed[], edges: GraphEdge[], width: number, height: numb
     if (n.y < margin) n.vy += (margin - n.y) * 0.05
     if (n.y > height - margin) n.vy -= (n.y - (height - margin)) * 0.05
 
-    n.x += Math.max(-6, Math.min(6, n.vx))
-    n.y += Math.max(-6, Math.min(6, n.vy))
+    n.x += Math.max(-5, Math.min(5, n.vx))
+    n.y += Math.max(-5, Math.min(5, n.vy))
 
     // Hard stop, so nothing can leave the panel even while being dragged.
     n.x = Math.max(14, Math.min(width - 14, n.x))
@@ -300,7 +300,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
   const labelled = useMemo(() => {
     const ranked = [...visible.nodes]
       .sort((a, b) => (degrees.get(b.id) || 0) - (degrees.get(a.id) || 0))
-      .slice(0, 12)
+      .slice(0, 10)
       .map(n => n.id)
     return new Set(ranked)
   }, [visible, degrees])
@@ -355,8 +355,10 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
         const b = byId.get(e.to)
         if (!a || !b) continue
         const shown = !lit || (lit.has(e.from) && lit.has(e.to))
-        ctx.strokeStyle = shown ? 'rgba(255,106,51,0.35)' : 'rgba(154,164,178,0.06)'
-        ctx.lineWidth = shown ? 0.9 : 0.5
+        ctx.strokeStyle = shown
+          ? (selected ? 'rgba(255,106,51,0.58)' : 'rgba(149,160,178,0.20)')
+          : 'rgba(154,164,178,0.055)'
+        ctx.lineWidth = shown && selected ? 1.15 : 0.65
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)
@@ -368,16 +370,25 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
 
       for (const n of nodes) {
         const shown = !lit || lit.has(n.id)
-        const size = 2.5 + Math.min(7, n.degree * 0.7)
+        const size = 2.25 + Math.min(7, n.degree * 0.68)
         ctx.globalAlpha = shown ? 1 : 0.14
-        ctx.fillStyle = shown ? KIND_COLOR[n.kind] || DIM : DIM
+        const color = shown ? KIND_COLOR[n.kind] || DIM : DIM
+        if (shown && n.degree > 5) {
+          ctx.beginPath()
+          ctx.fillStyle = color
+          ctx.globalAlpha = 0.13
+          ctx.arc(n.x, n.y, size + 6, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.globalAlpha = 1
+        }
+        ctx.fillStyle = color
         ctx.beginPath()
         ctx.arc(n.x, n.y, size, 0, Math.PI * 2)
         ctx.fill()
 
         if (n.id === selected) {
-          ctx.strokeStyle = '#ffffff'
-          ctx.lineWidth = 1.5
+          ctx.strokeStyle = '#f7f7f8'
+          ctx.lineWidth = 1.25
           ctx.beginPath()
           ctx.arc(n.x, n.y, size + 4, 0, Math.PI * 2)
           ctx.stroke()
@@ -389,10 +400,10 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
           (matched ? matched.has(n.id) : false)
         if (shown && named) {
           const text = n.label.length > 20 ? n.label.slice(0, 19) + '…' : n.label
-          ctx.font = '11px ui-sans-serif, system-ui, sans-serif'
-          const pad = 4
+          ctx.font = '10.5px ui-sans-serif, system-ui, sans-serif'
+          const pad = 5
           const w = ctx.measureText(text).width + pad * 2
-          const h = 15
+          const h = 17
 
           // Try to the right of the dot first, then left, then above, then below.
           const spots = [
@@ -409,12 +420,17 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
           // printing one word on top of another.
           if (free) {
             taken.push({ x: free.x, y: free.y, w, h })
-            ctx.globalAlpha = 0.85
-            ctx.fillStyle = '#0b0d10'
-            ctx.fillRect(free.x, free.y, w, h)
+            ctx.globalAlpha = 0.94
+            ctx.fillStyle = '#111317'
+            ctx.beginPath()
+            ctx.roundRect(free.x, free.y, w, h, 4)
+            ctx.fill()
+            ctx.strokeStyle = 'rgba(255,255,255,0.10)'
+            ctx.lineWidth = 0.5
+            ctx.stroke()
             ctx.globalAlpha = 1
-            ctx.fillStyle = '#e8eaed'
-            ctx.fillText(text, free.x + pad, free.y + 11)
+            ctx.fillStyle = '#e5e7eb'
+            ctx.fillText(text, free.x + pad, free.y + 12)
           }
         }
         ctx.globalAlpha = 1
