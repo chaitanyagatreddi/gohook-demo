@@ -500,8 +500,8 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
               title={v.key === 'authored' ? 'Needs your Reddit account connected' : undefined}
               className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${
                 slice === v.key
-                  ? 'bg-[#ff4500] text-white'
-                  : 'text-[#9aa4b2] hover:text-[#e8eaed] hover:bg-[#242a33] disabled:text-[#3a4250] disabled:hover:bg-transparent disabled:cursor-not-allowed'
+                  ? 'bg-[#24272d] text-[#f4f5f6] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+                  : 'text-[#858b95] hover:text-[#e8eaed] hover:bg-[#1d2025] disabled:text-[#3a4250] disabled:hover:bg-transparent disabled:cursor-not-allowed'
               }`}
             >
               {v.label}
@@ -618,8 +618,8 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
             onMouseLeave={() => { dragRef.current.id = null }}
           />
           <div className="absolute top-4 left-4 w-[min(360px,calc(100%-2rem))]">
-            <div className="flex items-center gap-2 rounded-xl bg-[#14171c]/95 border border-[#242a33] px-3 py-2 shadow-lg backdrop-blur">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#9aa4b2" strokeWidth="1.8" className="w-4 h-4 flex-none">
+            <div className="flex items-center gap-2 rounded-xl bg-[#111316]/95 border border-[#30333a] px-3.5 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.28)] backdrop-blur">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#858b95" strokeWidth="1.7" className="w-4 h-4 flex-none">
                 <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
               </svg>
               <input
@@ -658,7 +658,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
                     <button
                       key={k}
                       onClick={() => setKinds(prev => (on ? prev.filter(x => x !== k) : [...prev, k]))}
-                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${on ? 'border-[#242a33] bg-[#14171c] text-[#e8eaed]' : 'border-[#242a33] text-[#6b7280]'}`}
+                      className={`text-xs px-2.5 py-1.5 rounded-md border transition-colors ${on ? 'border-[#343840] bg-[#181a1f] text-[#e8eaed]' : 'border-[#24272d] bg-[#101114] text-[#747a84] hover:text-[#c4c8cf]'}`}
                     >
                       <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: on ? KIND_COLOR[k] : DIM }} />
                       {k}
@@ -667,8 +667,8 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
                 })}
               </div>
 
-              <div className="rounded-xl bg-[#14171c] border border-[#242a33] p-3">
-                <h3 className="text-sm font-medium mb-2">Most connected</h3>
+              <div className="rounded-xl bg-[#121417] border border-[#2a2d33] p-4 shadow-[0_12px_30px_rgba(0,0,0,0.12)]">
+                <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#858b95] mb-2">Most connected</h3>
                 {mostConnected.length === 0 ? (
                   <p className="text-xs text-[#6b7280]">Nothing to show yet.</p>
                 ) : (
@@ -677,7 +677,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
                       <li key={n.id}>
                         <button
                           onClick={() => setSelected(n.id)}
-                          className="w-full flex items-center gap-2 py-1.5 text-left hover:bg-[#242a33] rounded px-1"
+                          className="w-full flex items-center gap-2 py-2 text-left hover:bg-[#1d2025] rounded-md px-1.5 transition-colors"
                         >
                           <span className="w-2 h-2 rounded-sm flex-none" style={{ background: KIND_COLOR[n.kind] }} />
                           <span className="text-sm truncate flex-1">{n.label}</span>
@@ -694,13 +694,13 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
             </>
           ) : (
             <>
-              <div className="rounded-xl bg-[#14171c] border border-[#242a33] p-3">
+              <div className="rounded-xl bg-[#121417] border border-[#2a2d33] p-4 shadow-[0_12px_30px_rgba(0,0,0,0.12)]">
                 <div className="flex items-start gap-2">
-                  <button onClick={() => setSelected(null)} className="text-[#9aa4b2] hover:text-[#e8eaed] text-sm">←</button>
+                  <button onClick={() => setSelected(null)} className="text-[#858b95] hover:text-[#e8eaed] text-sm">←</button>
                   <span className="w-2 h-2 rounded-sm mt-1.5 flex-none" style={{ background: KIND_COLOR[selectedNode.kind] }} />
                   <h3 className="text-sm font-medium flex-1 break-words">{selectedNode.label}</h3>
                 </div>
-                <dl className="mt-3 text-xs flex flex-col gap-2">
+                <dl className="mt-4 border-t border-[#25282e] pt-3 text-xs flex flex-col gap-2.5">
                   <div className="flex justify-between gap-3">
                     <dt className="text-[#9aa4b2]">kind</dt>
                     <dd className="flex items-center gap-2">
@@ -768,15 +768,15 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
                 </dl>
               </div>
 
-              <div className="rounded-xl bg-[#14171c] border border-[#242a33] p-3">
+              <div className="rounded-xl bg-[#121417] border border-[#2a2d33] p-4 shadow-[0_12px_30px_rgba(0,0,0,0.12)]">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">What it touches</h3>
-                  <div className="flex gap-1">
+                  <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#858b95]">What it touches</h3>
+                  <div className="flex gap-1 rounded-md border border-[#292c32] bg-[#0d0f12] p-0.5">
                     {[1, 2, 3].map(d => (
                       <button
                         key={d}
                         onClick={() => setDepth(d)}
-                        className={`w-7 h-7 text-xs rounded-md ${depth === d ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:bg-[#242a33]'}`}
+                        className={`w-7 h-7 text-xs rounded ${depth === d ? 'bg-[#25282e] text-white' : 'text-[#858b95] hover:bg-[#1d2025]'}`}
                       >
                         {d}
                       </button>
@@ -794,7 +794,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
                       <button
                         key={id}
                         onClick={() => setSelected(id)}
-                        className="text-xs px-2 py-1 rounded-md bg-[#1c2027] border border-[#242a33] hover:border-[#ff6a33] truncate max-w-[140px]"
+                        className="text-xs px-2 py-1 rounded-md bg-[#17191e] border border-[#292c32] hover:border-[#51555d] truncate max-w-[140px] transition-colors"
                         title={n.label}
                       >
                         {n.label}
