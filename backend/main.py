@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
-from crawler import crawl_reddit, search_many, search_web
+from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review
 from extractors import extract_intel
 from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, plan_queries, answer_from_threads
 from graph import ingest_threads, link_user_to_threads, read_graph
@@ -405,14 +405,16 @@ async def question_answer(req: QuestionAnswerRequest):
 
     # Look it up first, so the answer comes from sources rather than memory.
     # If the search fails we still answer, but the reply says it is unsourced.
-    results = []
+    results, validation = [], {"checked": 0, "verified": 0, "communities": 0, "retried": False, "passed": False}
     try:
-        results = await search_web(req.question, reddit_only=True)
+        results, validation = await research_reddit_with_review(req.question)
     except Exception:
         logger.exception("Web search failed, answering without sources")
 
     try:
-        return await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
+        answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
+        answer["validation"] = validation
+        return answer
     except Exception:
         logger.exception("Question answer generation failed")
         raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")

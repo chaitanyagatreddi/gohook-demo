@@ -155,3 +155,41 @@ async def search_web(query: str, limit: int = 6, reddit_only: bool = False) -> l
         results.append(result)
 
     return results
+
+
+def verified_reddit_threads(results: list[dict]) -> list[dict]:
+    """Keep only complete Reddit thread records that can safely enter a graph."""
+    threads, seen = [], set()
+    for result in results:
+        url = result.get("url", "")
+        permalink = result.get("permalink", "")
+        subreddit = result.get("subreddit_name_prefixed", "")
+        if not permalink or not subreddit or "/comments/" not in url:
+            continue
+        key = permalink.split("?")[0].split("#")[0].rstrip("/")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        threads.append(result)
+    return threads
+
+
+async def research_reddit_with_review(question: str, limit: int = 6) -> tuple[list[dict], dict]:
+    """Research Reddit, then make one focused retry if the evidence is incomplete."""
+    initial = await search_web(question, limit=limit, reddit_only=True)
+    threads = verified_reddit_threads(initial)
+    communities = {t["subreddit_name_prefixed"] for t in threads}
+    retried = len(threads) < 3 or len(communities) < 2
+
+    if retried:
+        retry = await search_web(f"{question} experience discussion", limit=limit, reddit_only=True)
+        threads = verified_reddit_threads(initial + retry)
+        communities = {t["subreddit_name_prefixed"] for t in threads}
+
+    return threads[:limit], {
+        "checked": len(initial) + (limit if retried else 0),
+        "verified": len(threads[:limit]),
+        "communities": len(communities),
+        "retried": retried,
+        "passed": len(threads) >= 3 and len(communities) >= 2,
+    }

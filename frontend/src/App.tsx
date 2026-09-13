@@ -111,7 +111,8 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 
 type Draft = { draft: string; word_count: number; tone: string }
 type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
-type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[] }
+type QuestionValidation = { checked: number; verified: number; communities: number; retried: boolean; passed: boolean }
+type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
   pricing: { icon: '💰', label: 'Pricing' },
@@ -331,7 +332,7 @@ export default function App() {
         throw new Error(err.detail || 'Answer generation failed')
       }
       const data = await res.json()
-      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [] } : entry))
+      setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? { ...entry, answer: data.answer, sources: data.sources ?? [], validation: data.validation } : entry))
     } catch (e: unknown) {
       setAnswerErrors(prev => ({ ...prev, [index]: e instanceof Error ? e.message : 'Something went wrong' }))
     } finally {
@@ -865,6 +866,11 @@ export default function App() {
                             <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">
                               {renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}
                             </p>
+                            {item.validation && (
+                              <p className={`mt-3 text-xs ${item.validation.passed ? 'text-[#9aa4b2]' : 'text-amber-300'}`}>
+                                Evidence check: {item.validation.verified} verified threads across {item.validation.communities} communities{item.validation.retried ? ' · refined once' : ''}{item.validation.passed ? '' : ' · limited coverage'}
+                              </p>
+                            )}
                             {!!item.sources?.length && (
                               <details className="mt-3">
                                 <summary className="text-xs text-[#9aa4b2] cursor-pointer">{item.sources.length} sources</summary>
