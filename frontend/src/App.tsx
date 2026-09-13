@@ -662,11 +662,11 @@ export default function App() {
   const activeResults = intel ? intel[activeTab] : []
 
   return (
-    <div className="min-h-screen bg-[#0b0d10] text-[#e8eaed] flex items-start">
+    <div className="min-h-screen bg-[#0a0b0d] text-[#f1f2f4] flex items-start">
       {/* Left rail. Layout borrowed from GTM Predictor; GoHook colours. */}
       {!(showAuthGate && !session) && (
-        <aside className="sticky top-0 h-screen flex-none w-16 md:w-60 flex flex-col bg-[#14171c] border-r border-[#242a33] py-5">
-          <div className="px-0 md:px-5 mb-6 flex flex-col items-center md:items-start">
+        <aside className="sticky top-0 h-screen flex-none w-16 md:w-60 flex flex-col bg-[#101114] border-r border-[#272a30] py-5">
+          <div className="px-0 md:px-5 mb-8 flex flex-col items-center md:items-start">
             <div className="flex items-center gap-2">
               <svg viewBox="0 0 32 32" className="w-[22px] h-[22px] flex-none" aria-hidden="true">
                 <g stroke="#ff4500" strokeWidth="2" fill="none">
@@ -676,13 +676,13 @@ export default function App() {
                   <rect x="20" y="22" width="8" height="7" rx="1" />
                 </g>
               </svg>
-              <h1 className="hidden md:block text-lg font-bold tracking-tight">GoHook</h1>
+              <h1 className="hidden md:block text-[17px] font-semibold tracking-[-0.03em]">GoHook</h1>
             </div>
-            <p className="hidden md:block text-xs text-[#9aa4b2] mt-2 leading-snug">
+            <p className="hidden md:block text-xs text-[#747982] mt-2 leading-snug">
               Your knowledge graph for Reddit.
             </p>
           </div>
-          <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-col gap-1">
+          <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-col gap-1.5">
             {([
               { key: 'results', label: 'Results', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
               { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
@@ -694,9 +694,10 @@ export default function App() {
                 key={item.key}
                 onClick={() => setView(item.key)}
                 title={item.label}
-                className={`flex items-center justify-center md:justify-start gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${view === item.key ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed] hover:bg-[#242a33]'}`}
+                className={`group relative flex items-center justify-center md:justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${view === item.key ? 'bg-[#1c1e23] text-[#f7f7f8] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]' : 'text-[#858b95] hover:text-[#e8eaed] hover:bg-[#191b1f]'}`}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="w-[18px] h-[18px] flex-none">{item.icon}</svg>
+                {view === item.key && <span className="absolute left-0 h-4 w-0.5 rounded-full bg-[#ff6a33]" aria-hidden="true" />}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="w-[17px] h-[17px] flex-none">{item.icon}</svg>
                 <span className="hidden md:inline">
                   {item.label}
                   {item.key === 'board' && board.length > 0 && <span className="opacity-80"> ({board.length})</span>}

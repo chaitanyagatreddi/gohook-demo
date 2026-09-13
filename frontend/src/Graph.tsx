@@ -470,12 +470,12 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
   }
 
   return (
-    <main className="flex-1 min-w-0 h-screen overflow-hidden flex flex-col">
-      <header className="px-6 pt-5 pb-3 flex items-center gap-3 flex-wrap">
-        <h2 className="text-lg font-semibold">Your graph</h2>
-        <span className="text-xs text-[#9aa4b2]">Threads, communities and topics you've searched or saved.</span>
+    <main className="flex-1 min-w-0 h-screen overflow-hidden flex flex-col bg-[#0a0b0d]">
+      <header className="px-6 pt-6 pb-4 flex items-center gap-3 flex-wrap border-b border-[#1d2025]">
+        <h2 className="text-lg font-semibold tracking-[-0.02em]">Your graph</h2>
+        <span className="text-xs text-[#7f858e]">Threads, communities and topics you've searched or saved.</span>
 
-        <div className="ml-auto flex items-center gap-1 rounded-lg bg-[#14171c] border border-[#242a33] p-1">
+        <div className="ml-auto flex items-center gap-1 rounded-lg bg-[#141518] border border-[#292c32] p-1 shadow-[0_8px_30px_rgba(0,0,0,0.15)]">
           {VIEWS.map(v => (
             <button
               key={v.key}
@@ -496,7 +496,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
 
       {/* Reddit account. Hidden once connected and pulled in, unless something went wrong. */}
       {!redditHidden && (
-        <div className="mx-6 mb-3 rounded-xl bg-[#14171c] border border-[#242a33] px-4 py-3 flex items-center gap-3 flex-wrap">
+        <div className="mx-6 mb-3 rounded-xl bg-[#121417] border border-[#272a30] px-4 py-3 flex items-center gap-3 flex-wrap shadow-[0_12px_30px_rgba(0,0,0,0.12)]">
           <span className={`w-2 h-2 rounded-full flex-none ${reddit?.connected ? 'bg-[#50c878]' : 'bg-[#ff4500]'}`} />
 
           <p className="text-sm flex-1 min-w-[240px]">
@@ -548,23 +548,23 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
       )}
 
       {/* Counts across the top. */}
-      <div className="px-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="px-6 pt-2 grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Threads', value: visible.nodes.filter(n => n.kind === 'thread').length },
           { label: 'Communities', value: visible.nodes.filter(n => n.kind === 'subreddit').length },
           { label: 'Topics', value: visible.nodes.filter(n => n.kind === 'topic').length },
           { label: 'Links', value: visible.edges.length },
         ].map(card => (
-          <div key={card.label} className="rounded-xl bg-[#14171c] border border-[#242a33] px-4 py-3">
-            <div className="text-xs text-[#9aa4b2]">{card.label}</div>
-            <div className="text-3xl font-semibold tabular-nums mt-1">{card.value}</div>
+          <div key={card.label} className="rounded-xl bg-[#121417] border border-[#272a30] px-4 py-3.5 shadow-[0_12px_30px_rgba(0,0,0,0.1)]">
+            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#747a84]">{card.label}</div>
+            <div className="text-3xl font-semibold tracking-[-0.03em] tabular-nums mt-1">{card.value}</div>
           </div>
         ))}
       </div>
 
       <div className="flex-1 min-h-0 px-6 py-4 flex gap-4">
         {/* The picture. */}
-        <div className="flex-1 min-w-0 rounded-xl bg-[#14171c] border border-[#242a33] relative overflow-hidden">
+        <div className="flex-1 min-w-0 rounded-xl border border-[#2a2d33] relative overflow-hidden bg-[radial-gradient(circle_at_50%_45%,rgba(255,106,51,0.06),transparent_38%),linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px),#101114] bg-[size:auto,28px_28px,28px_28px,auto] shadow-[0_20px_50px_rgba(0,0,0,0.2)]">
           {loading && <p className="absolute inset-0 grid place-items-center text-sm text-[#9aa4b2]">Loading your graph…</p>}
           {!loading && error && <p className="absolute inset-0 grid place-items-center text-sm text-[#9aa4b2] px-8 text-center">{error}</p>}
           {!loading && !error && visible.nodes.length === 0 && (
@@ -628,7 +628,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
               )}
             </div>
           </div>
-          <span className="absolute bottom-4 right-4 text-[11px] text-[#9aa4b2]">Drag to explore</span>
+          <span className="absolute bottom-4 right-4 text-[11px] uppercase tracking-[0.08em] text-[#747a84]">Drag to explore</span>
         </div>
 
         {/* Details on the right. */}
