@@ -270,6 +270,11 @@ export default function App() {
   const [answerErrors, setAnswerErrors] = useState<Record<number, string>>({})
   const [pickedQuestions, setPickedQuestions] = useState<Set<number>>(new Set())
   const [questionProgress, setQuestionProgress] = useState<QuestionProgress | null>(null)
+  const [scottAvailable, setScottAvailable] = useState(false)
+  const [scottEnabled, setScottEnabled] = useState(() => {
+    try { return localStorage.getItem('gohook_scott_enabled') !== 'false' } catch { return true }
+  })
+  const scottActive = scottAvailable && scottEnabled
 
   function toggleQuestion(index: number) {
     setPickedQuestions(prev => {
@@ -329,20 +334,21 @@ export default function App() {
     if (!item) return
     setAnsweringIndex(index)
     setAnswerErrors(prev => ({ ...prev, [index]: '' }))
-    setQuestionProgress({
-      questionIndex: index,
-      running: true,
-      steps: {
-        research: { state: 'active', detail: 'Starting Reddit research' },
-        validate: { state: 'idle', detail: 'Waiting for research' },
-        answer: { state: 'idle', detail: 'Waiting for evidence' },
-        correct: { state: 'idle', detail: 'Waiting for answer validation' },
-      },
-    })
+    setQuestionProgress(scottActive ? {
+        questionIndex: index,
+        running: true,
+        steps: {
+          research: { state: 'active', detail: 'Starting Reddit research' },
+          validate: { state: 'idle', detail: 'Waiting for research' },
+          answer: { state: 'idle', detail: 'Waiting for evidence' },
+          correct: { state: 'idle', detail: 'Waiting for answer validation' },
+        },
+      } : null)
     try {
+      const auth = await authHeaders()
       const res = await fetch(`${API}/question-answer-stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({ question: item.question }),
       })
       if (!res.ok) {
@@ -363,7 +369,7 @@ export default function App() {
           const line = block.split('\n').find(entry => entry.startsWith('data: '))
           if (!line) continue
           const event = JSON.parse(line.slice(6))
-          if (event.type === 'stage') {
+          if (event.type === 'stage' && scottActive) {
             const stage = event.stage as QuestionStageKey
             setQuestionProgress(prev => prev ? {
               ...prev,
@@ -440,6 +446,24 @@ export default function App() {
   useEffect(() => {
     if (session) setShowAuthGate(false)
   }, [session])
+
+  useEffect(() => {
+    if (!session) {
+      setScottAvailable(false)
+      return
+    }
+    fetch(`${API}/scott-access`, { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then(response => response.ok ? response.json() : { enabled: false })
+      .then(data => setScottAvailable(Boolean(data.enabled)))
+      .catch(() => setScottAvailable(false))
+  }, [session])
+
+  function toggleScott() {
+    const enabled = !scottEnabled
+    setScottEnabled(enabled)
+    try { localStorage.setItem('gohook_scott_enabled', String(enabled)) } catch { /* blocked */ }
+    if (!enabled) setQuestionProgress(null)
+  }
 
   async function authHeaders(): Promise<Record<string, string>> {
     const { data } = await supabase.auth.getSession()
@@ -873,7 +897,7 @@ export default function App() {
         {view === 'board' && <Board board={board} setBoard={setBoard} onGoToResults={() => setView('results')} />}
 
         {view === 'questions' && (
-          <div className="max-w-6xl mx-auto grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+          <div className={`max-w-6xl mx-auto grid gap-6 items-start ${scottActive ? 'lg:grid-cols-[minmax(0,1fr)_300px]' : 'grid-cols-1'}`}>
             <div className="min-w-0">
             <div className="border-b border-[#242a33] pb-6">
               <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
@@ -948,7 +972,7 @@ export default function App() {
                             <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">
                               {renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}
                             </p>
-                            {item.validation && (
+                            {scottActive && item.validation && (
                               <div className="mt-3 flex flex-wrap items-center gap-2">
                                 <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${item.validation.passed ? 'border-[#50c878]/30 bg-[#50c878]/10 text-[#50c878]' : 'border-amber-300/30 bg-amber-300/10 text-amber-300'}`}>
                                   Evidence score {item.validation.score}/100
@@ -956,7 +980,7 @@ export default function App() {
                                 <span className="text-xs text-[#9aa4b2]">{item.validation.verified} relevant threads · {item.validation.communities} communities{item.validation.retried ? ' · refined once' : ''}</span>
                               </div>
                             )}
-                            {item.run && (
+                            {scottActive && item.run && (
                               <div className={`mt-3 rounded-lg border px-3 py-2.5 ${item.run.checks?.some(check => !check.passed) ? 'border-amber-300/25 bg-amber-300/5' : 'border-[#30353e] bg-[#101114]'}`}>
                                 <p className={`text-xs font-medium ${item.run.checks?.some(check => !check.passed) ? 'text-amber-300' : 'text-[#50c878]'}`}>
                                   {item.run.checks?.some(check => !check.passed)
@@ -983,7 +1007,7 @@ export default function App() {
                                 </ol>
                               </details>
                             )}
-                            {item.run && (
+                            {scottActive && item.run && (
                               <details className="mt-3">
                                 <summary className={`text-xs cursor-pointer ${item.run.passed ? 'text-[#9aa4b2]' : 'text-amber-300'}`}>
                                   Evidence and attempts · {item.run.passed ? 'passed' : 'needs review'}
@@ -1016,7 +1040,7 @@ export default function App() {
               </div>
             )}
             </div>
-            <aside className="lg:sticky lg:top-8 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
+            {scottActive && <aside className="lg:sticky lg:top-8 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
               <div className="flex items-center justify-between pb-4 border-b border-[#242a33]">
                 <div>
                   <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#747a84]">Question run</p>
@@ -1038,7 +1062,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-            </aside>
+            </aside>}
           </div>
         )}
 
@@ -1101,6 +1125,26 @@ export default function App() {
                 <p className="text-xs text-[#9aa4b2]">Zernio is connected — you can schedule posts to Reddit.</p>
               )}
             </div>
+            {scottAvailable && (
+              <div className="mt-4 border border-[#242a33] bg-[#14171c] rounded-xl p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-[#e8eaed]">Scott</p>
+                    <p className="mt-1 text-xs text-[#9aa4b2]">Show private evidence checks and run details.</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={scottEnabled}
+                    aria-label={scottEnabled ? 'Disable Scott' : 'Enable Scott'}
+                    onClick={toggleScott}
+                    className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${scottEnabled ? 'bg-[#ff4500]' : 'bg-[#30353e]'}`}
+                  >
+                    <span className={`absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${scottEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

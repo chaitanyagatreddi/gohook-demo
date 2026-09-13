@@ -30,6 +30,11 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+SCOTT_ACCESS_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("SCOTT_ACCESS_EMAILS", "").split(",")
+    if email.strip()
+}
 
 ONBOARDING_EMAIL_HTML = """
 <p>Hey {name} \U0001F44B,</p>
@@ -76,8 +81,8 @@ async def send_onboarding_email(to_email: str):
         logger.error(f"Resend send failed: {res.status_code} {res.text[:500]}")
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)):
-    """Returns Supabase user_id from a Bearer access token, or None if absent (local-dev fallback)."""
+async def get_current_identity(authorization: Optional[str] = Header(None)):
+    """Return the signed-in Supabase identity, or None when signed out."""
     if not authorization or not authorization.startswith("Bearer "):
         return None
     token = authorization.removeprefix("Bearer ")
@@ -89,7 +94,18 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         )
     if res.status_code != 200:
         raise HTTPException(status_code=401, detail="Invalid or expired session. Please sign in again.")
-    return res.json()["id"]
+    return res.json()
+
+
+async def get_current_user(authorization: Optional[str] = Header(None)):
+    """Returns Supabase user_id from a Bearer access token, or None if absent (local-dev fallback)."""
+    identity = await get_current_identity(authorization)
+    return identity["id"] if identity else None
+
+
+def has_scott_access(identity: Optional[dict]) -> bool:
+    email = str((identity or {}).get("email", "")).strip().lower()
+    return bool(email and email in SCOTT_ACCESS_EMAILS)
 
 
 async def require_user(authorization: Optional[str] = Header(None)):
@@ -147,6 +163,11 @@ class SearchRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/scott-access")
+async def scott_access(identity: Optional[dict] = Depends(get_current_identity)):
+    return {"enabled": has_scott_access(identity)}
 
 
 @app.post("/reddit/connect")
@@ -400,7 +421,10 @@ def question_batch(req: QuestionBatchRequest):
 
 
 @app.post("/question-answer")
-async def question_answer(req: QuestionAnswerRequest):
+async def question_answer(
+    req: QuestionAnswerRequest,
+    identity: Optional[dict] = Depends(get_current_identity),
+):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
@@ -423,7 +447,7 @@ async def question_answer(req: QuestionAnswerRequest):
             attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
         answer["validation"] = validation
         answer["run"] = {"passed": validation["passed"] and answer_review["passed"], "claims": answer_review["claims"], "attempts": attempts}
-        return answer
+        return answer if has_scott_access(identity) else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
     except Exception:
         logger.exception("Question answer generation failed")
         raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")
@@ -473,25 +497,34 @@ def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
 
 
 @app.post("/question-answer-stream")
-async def question_answer_stream(req: QuestionAnswerRequest):
+async def question_answer_stream(
+    req: QuestionAnswerRequest,
+    identity: Optional[dict] = Depends(get_current_identity),
+):
     """Run a question while reporting each real research and correction stage."""
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
+    scott_visible = has_scott_access(identity)
+
     async def events():
         try:
-            yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Searching Reddit"})
+            if scott_visible:
+                yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Searching Reddit"})
             initial = await search_web(req.question, limit=6, reddit_only=True)
-            yield _question_event({"type": "stage", "stage": "research", "status": "passed", "detail": f"{len(initial)} sources found"})
+            if scott_visible:
+                yield _question_event({"type": "stage", "stage": "research", "status": "passed", "detail": f"{len(initial)} sources found"})
 
-            yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Scoring source relevance"})
+            if scott_visible:
+                yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Scoring source relevance"})
             candidates = verified_reddit_threads(initial)
             evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
             retried = not evidence["passed"]
 
             if retried:
-                yield _question_event({"type": "stage", "stage": "validate", "status": "review", "detail": f"Evidence score {evidence['score']}/100; refining research"})
-                yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Running a focused second search"})
+                if scott_visible:
+                    yield _question_event({"type": "stage", "stage": "validate", "status": "review", "detail": f"Evidence score {evidence['score']}/100; refining research"})
+                    yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Running a focused second search"})
                 retry = await search_web(f"{req.question} experience discussion", limit=6, reddit_only=True)
                 candidates = verified_reddit_threads(initial + retry)
                 evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
@@ -506,20 +539,22 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                 "retried": retried,
                 "passed": evidence["passed"],
             }
-            yield _question_event({
-                "type": "stage",
-                "stage": "research",
-                "status": "passed" if results else "review",
-                "detail": f"{len(results)} relevant threads across {validation['communities']} communities",
-            })
-            yield _question_event({
-                "type": "stage",
-                "stage": "validate",
-                "status": "passed" if validation["passed"] else "review",
-                "detail": f"Evidence score {validation['score']}/100" + (" · passed" if validation["passed"] else " · needs review"),
-            })
+            if scott_visible:
+                yield _question_event({
+                    "type": "stage",
+                    "stage": "research",
+                    "status": "passed" if results else "review",
+                    "detail": f"{len(results)} relevant threads across {validation['communities']} communities",
+                })
+                yield _question_event({
+                    "type": "stage",
+                    "stage": "validate",
+                    "status": "passed" if validation["passed"] else "review",
+                    "detail": f"Evidence score {validation['score']}/100" + (" · passed" if validation["passed"] else " · needs review"),
+                })
 
-            yield _question_event({"type": "stage", "stage": "answer", "status": "active", "detail": "Mapping claims to sources"})
+            if scott_visible:
+                yield _question_event({"type": "stage", "stage": "answer", "status": "active", "detail": "Mapping claims to sources"})
             if validation["passed"] and results:
                 answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
             else:
@@ -543,28 +578,31 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                 {"stage": "research", "passed": validation["passed"], "retried": validation["retried"]},
                 {"stage": "answer", "passed": answer_review["passed"]},
             ]
-            yield _question_event({
-                "type": "stage",
-                "stage": "answer",
-                "status": "passed" if answer_review["passed"] else "review",
-                "detail": f"{len(answer_review['claims'])} source-backed claims mapped",
-            })
+            if scott_visible:
+                yield _question_event({
+                    "type": "stage",
+                    "stage": "answer",
+                    "status": "passed" if answer_review["passed"] else "review",
+                    "detail": f"{len(answer_review['claims'])} source-backed claims mapped",
+                })
 
             if validation["passed"] and results and not answer_review["passed"]:
-                yield _question_event({"type": "stage", "stage": "correct", "status": "active", "detail": "Correcting unsupported citations"})
+                if scott_visible:
+                    yield _question_event({"type": "stage", "stage": "correct", "status": "active", "detail": "Correcting unsupported citations"})
                 feedback = "Every factual claim needs valid source IDs, every source ID must appear as a matching [S1] citation, and every citation in the answer must be represented in the claims map."
                 answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
                 answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
                 attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
-                yield _question_event({
-                    "type": "stage",
-                    "stage": "correct",
-                    "status": "passed" if answer_review["passed"] else "review",
-                    "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · " + ("Corrected answer passed" if answer_review["passed"] else "Answer still needs review"),
-                })
-            elif validation["passed"] and answer_review["passed"]:
+                if scott_visible:
+                    yield _question_event({
+                        "type": "stage",
+                        "stage": "correct",
+                        "status": "passed" if answer_review["passed"] else "review",
+                        "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · " + ("Corrected answer passed" if answer_review["passed"] else "Answer still needs review"),
+                    })
+            elif scott_visible and validation["passed"] and answer_review["passed"]:
                 yield _question_event({"type": "stage", "stage": "correct", "status": "passed", "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · No correction needed"})
-            else:
+            elif scott_visible:
                 yield _question_event({"type": "stage", "stage": "correct", "status": "review", "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · Answer withheld"})
 
             answer["validation"] = validation
@@ -574,7 +612,8 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                 "attempts": attempts,
                 "checks": _question_checks(validation, answer_review),
             }
-            yield _question_event({"type": "result", "data": answer})
+            visible_answer = answer if scott_visible else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
+            yield _question_event({"type": "result", "data": visible_answer})
         except Exception:
             logger.exception("Streaming question answer failed")
             yield _question_event({"type": "error", "message": "Answer generation failed. Please try again."})
