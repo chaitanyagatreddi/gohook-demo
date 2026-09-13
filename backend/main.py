@@ -456,6 +456,8 @@ def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
             "detail": (
                 f"{answer_review['claim_count']} claims mapped to {answer_review['cited_sources']} sources"
                 if answer_review["passed"]
+                else "No source-backed claims were produced"
+                if answer_review["claim_count"] == 0
                 else f"{answer_review['invalid_claims']} invalid claims, {len(answer_review['invalid_citations'])} invalid citations, and {len(answer_review['unmapped_citations'])} unmapped citations"
             ),
         },
@@ -516,7 +518,16 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                 answer = {
                     "answer": "I couldn't find enough relevant Reddit evidence to give a reliable answer to this question.",
                     "claims": [],
-                    "sources": [],
+                    "sources": [
+                        {
+                            "n": index,
+                            "title": result.get("title", ""),
+                            "url": result.get("url", ""),
+                            "site": result.get("site", ""),
+                            "date": result.get("date", ""),
+                        }
+                        for index, result in enumerate(results, 1)
+                    ],
                     "sourced": False,
                 }
             answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
