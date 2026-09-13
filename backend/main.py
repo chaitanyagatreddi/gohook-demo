@@ -35,6 +35,11 @@ SCOTT_ACCESS_EMAILS = {
     for email in os.getenv("SCOTT_ACCESS_EMAILS", "").split(",")
     if email.strip()
 }
+SCOTT_ACCESS_REDDIT_USERNAMES = {
+    username.strip().lower()
+    for username in os.getenv("SCOTT_ACCESS_REDDIT_USERNAMES", "").split(",")
+    if username.strip()
+}
 
 ONBOARDING_EMAIL_HTML = """
 <p>Hey {name} \U0001F44B,</p>
@@ -103,9 +108,17 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     return identity["id"] if identity else None
 
 
-def has_scott_access(identity: Optional[dict]) -> bool:
+async def has_scott_access(identity: Optional[dict]) -> bool:
+    if not identity:
+        return False
     email = str((identity or {}).get("email", "")).strip().lower()
-    return bool(email and email in SCOTT_ACCESS_EMAILS)
+    if email and email in SCOTT_ACCESS_EMAILS:
+        return True
+    if not SCOTT_ACCESS_REDDIT_USERNAMES:
+        return False
+    connection = await composio_reddit.read_connection(identity["id"])
+    username = str((connection or {}).get("reddit_username", "")).strip().lower()
+    return bool(username and username in SCOTT_ACCESS_REDDIT_USERNAMES)
 
 
 async def require_user(authorization: Optional[str] = Header(None)):
@@ -167,7 +180,7 @@ def health():
 
 @app.get("/scott-access")
 async def scott_access(identity: Optional[dict] = Depends(get_current_identity)):
-    return {"enabled": has_scott_access(identity)}
+    return {"enabled": await has_scott_access(identity)}
 
 
 @app.post("/reddit/connect")
@@ -447,7 +460,7 @@ async def question_answer(
             attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
         answer["validation"] = validation
         answer["run"] = {"passed": validation["passed"] and answer_review["passed"], "claims": answer_review["claims"], "attempts": attempts}
-        return answer if has_scott_access(identity) else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
+        return answer if await has_scott_access(identity) else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
     except Exception:
         logger.exception("Question answer generation failed")
         raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")
@@ -505,7 +518,7 @@ async def question_answer_stream(
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    scott_visible = has_scott_access(identity)
+    scott_visible = await has_scott_access(identity)
 
     async def events():
         try:
