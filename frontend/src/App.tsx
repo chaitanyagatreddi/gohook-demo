@@ -735,7 +735,7 @@ export default function App() {
       ) : view === 'graph' ? (
         <Graph signedIn={!!session} onSignIn={() => setShowAuthGate(true)} />
       ) : (
-      <div className={`${view === 'board' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-4 py-10`}>
+      <div className={`${view === 'board' || view === 'questions' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-4 py-10`}>
         {/* Hero + search bar */}
         {!intel && !loading && searches.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
@@ -784,29 +784,33 @@ export default function App() {
         {view === 'board' && <Board board={board} setBoard={setBoard} onGoToResults={() => setView('results')} />}
 
         {view === 'questions' && (
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Batch questions</h2>
-            <p className="text-sm text-[#9aa4b2] mt-2">Enter 2 or 3 questions, one per line. Generate each answer individually.</p>
-            <textarea
-              value={questionBrief}
-              onChange={e => setQuestionBrief(e.target.value)}
-              rows={3}
-              placeholder={'What problem are users trying to solve?\nWhat alternatives do they compare?\nWhat makes them switch?'}
-              className="mt-5 w-full bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
-            />
-            <div className="mt-3 flex justify-end">
-              <button
-                onClick={createQuestionBatch}
-                disabled={!questionBrief.trim()}
-                className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-colors"
-              >
-                Create question batch
-              </button>
+          <div className="max-w-4xl mx-auto">
+            <div className="border-b border-[#242a33] pb-6">
+              <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
+              <p className="text-sm text-[#9aa4b2] mt-2">Enter 2 or 3 questions, one per line. Generate each answer individually.</p>
+            </div>
+            <div className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
+              <textarea
+                value={questionBrief}
+                onChange={e => setQuestionBrief(e.target.value)}
+                rows={3}
+                placeholder={'What problem are users trying to solve?\nWhat alternatives do they compare?\nWhat makes them switch?'}
+                className="w-full bg-[#0b0d10] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
+              />
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={createQuestionBatch}
+                  disabled={!questionBrief.trim()}
+                  className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-colors"
+                >
+                  Create question batch
+                </button>
+              </div>
             </div>
             {questionBatchError && <p className="mt-3 text-sm text-red-400">{questionBatchError}</p>}
             {questionBatch.length > 0 && (
-              <div className="mt-7 space-y-3">
-                <div className="flex items-center gap-3 pb-1">
+              <div className="mt-8 space-y-3">
+                <div className="flex items-center gap-3 rounded-xl border border-[#242a33] bg-[#14171c] px-4 py-3">
                   <label className="flex items-center gap-2 text-sm text-[#9aa4b2] cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -834,8 +838,8 @@ export default function App() {
                 {questionBatch.map((item, index) => (
                   <article
                     key={`${index}-${item.question}`}
-                    className={`border rounded-xl p-5 transition-colors ${
-                      pickedQuestions.has(index) ? 'border-[#ff4500] bg-[#14171c]' : 'border-[#242a33] bg-[#14171c]'
+                    className={`border rounded-2xl p-5 sm:p-6 transition-colors ${
+                      pickedQuestions.has(index) ? 'border-[#ff4500] bg-[#181b21] shadow-[0_0_0_1px_rgba(255,69,0,0.12)]' : 'border-[#242a33] bg-[#14171c] hover:border-[#343b47]'
                     }`}
                   >
                     <div className="flex gap-3">
