@@ -111,7 +111,7 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 
 type Draft = { draft: string; word_count: number; tone: string }
 type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
-type QuestionValidation = { checked: number; verified: number; communities: number; score: number; retried: boolean; passed: boolean }
+type QuestionValidation = { checked: number; verified: number; communities: number; score: number; coverage: number; retried: boolean; passed: boolean }
 type QuestionClaim = { text: string; sources: number[] }
 type QuestionCheck = { label: string; passed: boolean; detail: string }
 type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[] }

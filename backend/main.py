@@ -446,12 +446,17 @@ def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
             "detail": f"Evidence comes from {validation['communities']} communities",
         },
         {
+            "label": "Question coverage",
+            "passed": validation["coverage"] >= 70,
+            "detail": f"Sources cover {validation['coverage']}% of the question",
+        },
+        {
             "label": "Claim citations",
             "passed": answer_review["passed"],
             "detail": (
                 f"{answer_review['claim_count']} claims mapped to {answer_review['cited_sources']} sources"
                 if answer_review["passed"]
-                else f"{answer_review['invalid_claims']} invalid claims and {len(answer_review['invalid_citations'])} invalid citations"
+                else f"{answer_review['invalid_claims']} invalid claims, {len(answer_review['invalid_citations'])} invalid citations, and {len(answer_review['unmapped_citations'])} unmapped citations"
             ),
         },
     ]
@@ -487,6 +492,7 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                 "verified": len(results),
                 "communities": evidence["communities"],
                 "score": evidence["score"],
+                "coverage": evidence["coverage"],
                 "retried": retried,
                 "passed": evidence["passed"],
             }
@@ -527,7 +533,7 @@ async def question_answer_stream(req: QuestionAnswerRequest):
 
             if results and not answer_review["passed"]:
                 yield _question_event({"type": "stage", "stage": "correct", "status": "active", "detail": "Correcting unsupported citations"})
-                feedback = "Each factual claim needs valid source IDs and every source ID must appear as a matching [S1] citation."
+                feedback = "Every factual claim needs valid source IDs, every source ID must appear as a matching [S1] citation, and every citation in the answer must be represented in the claims map."
                 answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
                 answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
                 attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})

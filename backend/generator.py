@@ -191,6 +191,7 @@ Return valid JSON only in this exact shape:
 Rules:
 - Every factual claim must use one or more source numbers from the supplied results.
 - Every source number in a claim must appear in the answer as [S1], [S2], and so on.
+- Every citation used in the answer must appear in the matching entry in the claims map.
 - If evidence is incomplete or disagrees, say so plainly in the answer.
 - Never add a fact, name, number, or date that is not in the supplied results.
 - Do not include markdown headings or bullets in the answer.
@@ -199,13 +200,15 @@ Rules:
 SOURCE_RELEVANCE_SYSTEM_PROMPT = """Score how directly each supplied Reddit result can answer the user's question.
 
 Return valid JSON only in this exact shape:
-{"sources":[{"n":1,"relevance":0,"reason":"brief reason"}]}
+{"coverage":0,"sources":[{"n":1,"relevance":0,"reason":"brief reason"}]}
 
 Rules:
 - Judge only the supplied title and snippet. Do not use outside knowledge.
 - 80-100 means it directly addresses the question and contains useful evidence.
 - 60-79 means it addresses a meaningful part of the question.
 - Below 60 means it is incidental, off-topic, or too vague to support an answer.
+- Coverage scores whether the combined sources support every material part of the question.
+- A general discussion of the topic does not count as coverage of a specific mechanism, comparison, or measurement request.
 - Return one entry for every supplied source number.
 """
 
@@ -213,7 +216,7 @@ Rules:
 def evaluate_question_sources(question: str, results: List[dict]) -> dict:
     """Score source relevance and return only evidence that is on topic."""
     if not results:
-        return {"relevant": [], "score": 0, "communities": 0, "passed": False}
+        return {"relevant": [], "score": 0, "coverage": 0, "communities": 0, "passed": False}
     listed = "\n\n".join(
         f"[S{i}] {result.get('title', '')}\n{result.get('snippet', '')}"
         for i, result in enumerate(results, 1)
@@ -242,12 +245,17 @@ def evaluate_question_sources(question: str, results: List[dict]) -> dict:
     relevant = sorted((item for item in scored if item["relevance"] >= 60), key=lambda item: item["relevance"], reverse=True)
     top_scores = [item["relevance"] for item in relevant[:3]]
     relevance_score = round(sum(top_scores) / 3) if top_scores else 0
+    try:
+        coverage = max(0, min(100, int(payload.get("coverage", 0))))
+    except (TypeError, ValueError):
+        coverage = 0
     communities = len({item.get("subreddit_name_prefixed", "") for item in relevant if item.get("subreddit_name_prefixed")})
     diversity_factor = min(1, communities / 2)
-    evidence_score = round(relevance_score * diversity_factor)
+    evidence_score = round(relevance_score * diversity_factor * (coverage / 100))
     return {
         "relevant": relevant,
         "score": evidence_score,
+        "coverage": coverage,
         "communities": communities,
         "passed": len(relevant) >= 3 and communities >= 2 and evidence_score >= 60,
     }
@@ -258,6 +266,7 @@ def validate_question_answer(answer: str, claims: object, source_count: int) -> 
     valid_citations = {n for n in cited if 1 <= n <= source_count}
     invalid_citations = sorted(cited - valid_citations)
     valid_claims = []
+    mapped_citations = set()
     invalid_claims = 0
     if isinstance(claims, list):
         for claim in claims:
@@ -269,15 +278,18 @@ def validate_question_answer(answer: str, claims: object, source_count: int) -> 
                 invalid_claims += 1
                 continue
             valid_claims.append({"text": claim["text"], "sources": refs})
+            mapped_citations.update(refs)
     else:
         invalid_claims = 1
+    unmapped_citations = sorted(valid_citations - mapped_citations)
     return {
-        "passed": bool(answer.strip()) and source_count > 0 and bool(valid_claims) and not invalid_citations and not invalid_claims,
+        "passed": bool(answer.strip()) and source_count > 0 and bool(valid_claims) and not invalid_citations and not invalid_claims and not unmapped_citations,
         "claims": valid_claims,
         "claim_count": len(valid_claims),
         "cited_sources": len(valid_citations),
         "invalid_claims": invalid_claims,
         "invalid_citations": invalid_citations,
+        "unmapped_citations": unmapped_citations,
     }
 
 
