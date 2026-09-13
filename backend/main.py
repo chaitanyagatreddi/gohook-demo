@@ -433,6 +433,14 @@ def _question_event(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+def _question_confidence(score: int) -> str:
+    if score >= 70:
+        return "High"
+    if score >= 40:
+        return "Moderate"
+    return "Low"
+
+
 def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
     return [
         {
@@ -552,12 +560,12 @@ async def question_answer_stream(req: QuestionAnswerRequest):
                     "type": "stage",
                     "stage": "correct",
                     "status": "passed" if answer_review["passed"] else "review",
-                    "detail": "Corrected answer passed" if answer_review["passed"] else "Answer still needs review",
+                    "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · " + ("Corrected answer passed" if answer_review["passed"] else "Answer still needs review"),
                 })
             elif validation["passed"] and answer_review["passed"]:
-                yield _question_event({"type": "stage", "stage": "correct", "status": "passed", "detail": "No correction needed"})
+                yield _question_event({"type": "stage", "stage": "correct", "status": "passed", "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · No correction needed"})
             else:
-                yield _question_event({"type": "stage", "stage": "correct", "status": "review", "detail": "Answer withheld: evidence remains below threshold"})
+                yield _question_event({"type": "stage", "stage": "correct", "status": "review", "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · Answer withheld"})
 
             answer["validation"] = validation
             answer["run"] = {
