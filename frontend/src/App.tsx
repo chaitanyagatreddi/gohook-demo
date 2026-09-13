@@ -334,7 +334,8 @@ export default function App() {
     if (!item) return
     setAnsweringIndex(index)
     setAnswerErrors(prev => ({ ...prev, [index]: '' }))
-    setQuestionProgress(scottActive ? {
+    const scottVisibleForRun = scottEnabled && await refreshScottAccess()
+    setQuestionProgress(scottVisibleForRun ? {
         questionIndex: index,
         running: true,
         steps: {
@@ -369,7 +370,7 @@ export default function App() {
           const line = block.split('\n').find(entry => entry.startsWith('data: '))
           if (!line) continue
           const event = JSON.parse(line.slice(6))
-          if (event.type === 'stage' && scottActive) {
+          if (event.type === 'stage' && scottVisibleForRun) {
             const stage = event.stage as QuestionStageKey
             setQuestionProgress(prev => prev ? {
               ...prev,
@@ -452,11 +453,26 @@ export default function App() {
       setScottAvailable(false)
       return
     }
-    fetch(`${API}/scott-access`, { headers: { Authorization: `Bearer ${session.access_token}` } })
-      .then(response => response.ok ? response.json() : { enabled: false })
-      .then(data => setScottAvailable(Boolean(data.enabled)))
-      .catch(() => setScottAvailable(false))
+    void refreshScottAccess()
   }, [session])
+
+  async function refreshScottAccess() {
+    const headers = await authHeaders()
+    if (!headers.Authorization) {
+      setScottAvailable(false)
+      return false
+    }
+    try {
+      const response = await fetch(`${API}/scott-access`, { headers })
+      const data = response.ok ? await response.json() : { enabled: false }
+      const enabled = Boolean(data.enabled)
+      setScottAvailable(enabled)
+      return enabled
+    } catch {
+      setScottAvailable(false)
+      return false
+    }
+  }
 
   function toggleScott() {
     const enabled = !scottEnabled
