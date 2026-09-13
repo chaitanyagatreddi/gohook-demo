@@ -239,7 +239,16 @@ def generate_question_answer(brief: str, question: str, results: Optional[List[d
     return {
         "answer": answer,
         "sources": [
-            {"n": i, "title": r.get("title", ""), "url": r.get("url", ""), "site": r.get("site", ""), "date": r.get("date", "")}
+            {
+                "n": i,
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "site": r.get("site", ""),
+                "date": r.get("date", ""),
+                "permalink": r.get("permalink", ""),
+                "subreddit_name_prefixed": r.get("subreddit_name_prefixed", ""),
+                "selftext": r.get("selftext", ""),
+            }
             for i, r in enumerate(results or [], 1)
         ],
         "sourced": bool(results),

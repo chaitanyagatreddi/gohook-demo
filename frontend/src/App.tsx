@@ -110,7 +110,7 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 }
 
 type Draft = { draft: string; word_count: number; tone: string }
-type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string }
+type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
 type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[] }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
@@ -281,6 +281,13 @@ export default function App() {
         if (!item) continue
         const id = `batch::${item.question}`
         if (next.some(c => c.id === id)) continue
+        tellGraphSaved((item.sources ?? []).map(src => ({
+          title: src.title,
+          selftext: src.selftext,
+          permalink: src.permalink,
+          url: src.url,
+          subreddit_name_prefixed: src.subreddit_name_prefixed,
+        })))
         next.push({
           id,
           title: item.question,

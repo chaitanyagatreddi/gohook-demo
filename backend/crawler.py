@@ -139,12 +139,19 @@ async def search_web(query: str, limit: int = 6, reddit_only: bool = False) -> l
     for item in data.get("organic", [])[:limit]:
         url = item.get("link", "")
         site = re.sub(r"^https?://(www\.)?", "", url).split("/")[0] if url else ""
-        results.append({
+        result = {
             "title": item.get("title", ""),
             "snippet": item.get("snippet", ""),
             "url": url,
             "site": site,
             "date": item.get("date", ""),
-        })
+        }
+        if reddit_only:
+            sub_match = re.search(r"reddit\.com/r/([^/]+)", url)
+            result["permalink"] = re.sub(r"^https?://(www\.|old\.|new\.)?reddit\.com", "", url)
+            result["subreddit_name_prefixed"] = f"r/{sub_match.group(1)}" if sub_match else ""
+            result["selftext"] = item.get("snippet", "")
+            result["score"] = 0
+        results.append(result)
 
     return results
