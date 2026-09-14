@@ -950,16 +950,52 @@ def draft(req: DraftRequest):
 
 
 class CommentRequest(BaseModel):
-    post: str    # the Reddit post being replied to
+    post: str = ""  # legacy: the Reddit post text
+    post_url: Optional[str] = None
     intent: str  # what the user wants to say
 
 
-@app.post("/comment")
-def comment(req: CommentRequest):
-    if not req.post.strip() or not req.intent.strip():
-        raise HTTPException(status_code=400, detail="Post and intent cannot be empty")
+async def fetch_reddit_post(url: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    if host not in {"reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "redd.it", "www.redd.it"}:
+        raise HTTPException(status_code=400, detail="Please enter a Reddit post URL")
+    if not parsed.path or "/comments/" not in parsed.path:
+        raise HTTPException(status_code=400, detail="Please enter a Reddit thread URL")
+
+    json_url = f"{parsed.scheme or 'https'}://{parsed.netloc}{parsed.path.rstrip('/')}.json"
     try:
-        return draft_comment(req.post, req.intent)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            response = await client.get(
+                json_url,
+                params={"raw_json": "1"},
+                headers={"User-Agent": "GoHook/1.0 (reply draft)"},
+            )
+            response.raise_for_status()
+            listing = response.json()
+        post = listing[0]["data"]["children"][0]["data"]
+    except Exception:
+        logger.exception("Reddit post fetch failed")
+        raise HTTPException(status_code=502, detail="Could not fetch that Reddit post. Check the URL and try again.")
+
+    title = (post.get("title") or "").strip()
+    body = (post.get("selftext") or "").strip()
+    if not title and not body:
+        raise HTTPException(status_code=422, detail="That Reddit post has no readable text")
+    return f"{title}\n\n{body}".strip()
+
+
+@app.post("/comment")
+async def comment(req: CommentRequest):
+    if not req.intent.strip() or (not req.post.strip() and not (req.post_url or "").strip()):
+        raise HTTPException(status_code=400, detail="Reddit post URL and intent cannot be empty")
+    try:
+        post = await fetch_reddit_post(req.post_url) if req.post_url else req.post
+        return await run_in_threadpool(draft_comment, post, req.intent)
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Comment generation failed")
         raise HTTPException(status_code=500, detail="Comment generation failed. Please try again.")

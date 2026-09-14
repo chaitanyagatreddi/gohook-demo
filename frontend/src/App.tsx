@@ -38,7 +38,7 @@ const TAB_LABELS: Record<Tab, string> = {
   quotes: '💬 Quotes',
 }
 
-function ResultCard({ item, onReply, onAdd, added }: { item: ResultItem; onReply?: (text: string) => void; onAdd?: (item: ResultItem) => void; added?: boolean }) {
+function ResultCard({ item, onReply, onAdd, added }: { item: ResultItem; onReply?: (item: ResultItem) => void; onAdd?: (item: ResultItem) => void; added?: boolean }) {
   return (
     <div className="border border-[#242a33] bg-[#14171c] rounded-xl p-4 hover:border-[#ff4500]/50 transition-colors">
       <p className="text-[#e8eaed] text-sm leading-relaxed">{item.text}</p>
@@ -70,7 +70,7 @@ function ResultCard({ item, onReply, onAdd, added }: { item: ResultItem; onReply
         )}
         {onReply && (
           <button
-            onClick={() => onReply(item.text)}
+            onClick={() => onReply(item)}
             className="text-[#9aa4b2] hover:text-[#ff6a33] transition-colors"
             title="Reply to this"
           >
@@ -740,7 +740,7 @@ export default function App() {
 
   // Comment generator state
   const commentRef = useRef<HTMLDivElement>(null)
-  const [postText, setPostText] = useState('')
+  const [postUrl, setPostUrl] = useState('')
   const [intent, setIntent] = useState('')
   const [commenting, setCommenting] = useState(false)
   const [comment, setComment] = useState<Draft | null>(null)
@@ -937,7 +937,7 @@ export default function App() {
   }
 
   async function generateComment() {
-    if (!postText.trim() || !intent.trim()) return
+    if (!postUrl.trim() || !intent.trim()) return
     setCommenting(true)
     setCommentError('')
     setComment(null)
@@ -945,7 +945,7 @@ export default function App() {
       const res = await fetch(`${API}/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ post: postText, intent, platform: commentPlatform }),
+        body: JSON.stringify({ post_url: postUrl, intent, platform: commentPlatform }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -959,8 +959,8 @@ export default function App() {
     }
   }
 
-  function handleReply(text: string) {
-    setPostText(text)
+  function handleReply(item: ResultItem) {
+    setPostUrl(item.source_url)
     setComment(null)
     setCommentError('')
     setIntent('')
@@ -1934,18 +1934,17 @@ export default function App() {
                   </div>
                 </div>
                 <p className="text-xs text-[#9aa4b2] mt-1">
-                  Paste a post + what you want to say. We draft a {commentPlatform === 'hn' ? 'Hacker News style' : 'Reddit style'} comment that fits.
+                  Paste a Reddit URL + what you want to say. We fetch the post and draft a {commentPlatform === 'hn' ? 'Hacker News style' : 'Reddit style'} comment that fits.
                 </p>
 
                 <label className="block mt-4 text-xs font-medium text-[#9aa4b2]">
-                  The post
+                  Reddit post URL
                 </label>
                 <textarea
-                  value={postText}
-                  onChange={e => setPostText(e.target.value)}
-                  placeholder="Paste the post you want to reply to…"
-                  rows={4}
-                  className="mt-1 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
+                  value={postUrl}
+                  onChange={e => setPostUrl(e.target.value)}
+                  placeholder="https://www.reddit.com/r/.../comments/..."
+                  className="mt-1 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
                 />
 
                 <label className="mt-3 flex items-center gap-1.5 text-xs font-medium text-[#9aa4b2]">
@@ -1973,7 +1972,7 @@ export default function App() {
                 <div className="mt-2 flex items-center justify-end">
                   <button
                     onClick={generateComment}
-                    disabled={commenting || !postText.trim() || !intent.trim()}
+                    disabled={commenting || !postUrl.trim() || !intent.trim()}
                     className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-colors"
                   >
                     {commenting ? 'Drafting…' : 'Generate comment →'}
