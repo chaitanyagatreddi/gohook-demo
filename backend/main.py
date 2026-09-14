@@ -653,24 +653,34 @@ async def question_answer_stream(
     async def events():
         try:
             if scott_visible:
+                yield _question_event({"type": "stage", "stage": "understand", "status": "active", "detail": "Reading the question and its evidence target"})
+                yield _question_event({"type": "stage", "stage": "understand", "status": "passed", "detail": "Question understood; evidence search prepared"})
                 yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Searching Reddit"})
             initial = await search_web(req.question, limit=6, reddit_only=True)
             if scott_visible:
                 yield _question_event({"type": "stage", "stage": "research", "status": "passed", "detail": f"{len(initial)} sources found"})
 
             if scott_visible:
-                yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Scoring source relevance"})
+                yield _question_event({"type": "stage", "stage": "filter", "status": "active", "detail": "Removing duplicates and invalid Reddit links"})
             candidates = verified_reddit_threads(initial)
+            if scott_visible:
+                yield _question_event({"type": "stage", "stage": "filter", "status": "passed" if candidates else "review", "detail": f"{len(candidates)} verified Reddit threads remain"})
+                yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Scoring source relevance"})
             evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
             retried = not evidence["passed"]
 
             if retried:
                 if scott_visible:
                     yield _question_event({"type": "stage", "stage": "validate", "status": "review", "detail": f"Evidence score {evidence['score']}/100; refining research"})
-                    yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Running a focused second search"})
+                    yield _question_event({"type": "stage", "stage": "refine", "status": "active", "detail": "Running a focused second search"})
                 retry = await search_web(f"{req.question} experience discussion", limit=6, reddit_only=True)
                 candidates = verified_reddit_threads(initial + retry)
+                if scott_visible:
+                    yield _question_event({"type": "stage", "stage": "refine", "status": "passed", "detail": f"Added {len(retry)} candidates; {len(candidates)} verified threads remain"})
+                    yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Rescoring refined evidence"})
                 evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
+            elif scott_visible:
+                yield _question_event({"type": "stage", "stage": "refine", "status": "passed", "detail": "Not needed; initial evidence passed"})
 
             results = evidence["relevant"][:6]
             validation = {

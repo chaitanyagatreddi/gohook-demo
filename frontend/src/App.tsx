@@ -116,7 +116,7 @@ type QuestionClaim = { text: string; sources: number[] }
 type QuestionCheck = { label: string; passed: boolean; detail: string }
 type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[] }
 type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun; layer?: number; parentScore?: number; scoreDelta?: number }
-type QuestionStageKey = 'research' | 'validate' | 'answer' | 'correct'
+type QuestionStageKey = 'understand' | 'research' | 'filter' | 'validate' | 'refine' | 'answer' | 'correct'
 type QuestionStage = { state: 'idle' | 'active' | 'passed' | 'review'; detail: string }
 type QuestionProgress = { questionIndex: number; running: boolean; steps: Record<QuestionStageKey, QuestionStage> }
 type ScottAdminUser = { email: string; enabled: boolean }
@@ -345,8 +345,11 @@ export default function App() {
         questionIndex: index,
         running: true,
         steps: {
-          research: { state: 'active', detail: 'Starting Reddit research' },
-          validate: { state: 'idle', detail: 'Waiting for research' },
+          understand: { state: 'active', detail: 'Reading the question' },
+          research: { state: 'idle', detail: 'Waiting for the evidence target' },
+          filter: { state: 'idle', detail: 'Waiting for search results' },
+          validate: { state: 'idle', detail: 'Waiting for verified threads' },
+          refine: { state: 'idle', detail: 'Waiting for the first evidence score' },
           answer: { state: 'idle', detail: 'Waiting for evidence' },
           correct: { state: 'idle', detail: 'Waiting for answer validation' },
         },
@@ -865,26 +868,44 @@ export default function App() {
   const questionWorkflowSteps = [
     {
       number: '01',
-      title: 'Research Reddit',
-      detail: questionProgress?.steps.research.detail ?? (questionWorkflowItem?.validation
-        ? `${questionWorkflowItem.validation.verified} verified threads across ${questionWorkflowItem.validation.communities} communities`
-        : 'Waiting for a question'),
-      state: questionProgress?.steps.research.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle'),
+      title: 'Understand question',
+      detail: questionProgress?.steps.understand.detail ?? (questionWorkflowItem?.validation ? 'Question and evidence target identified' : 'Waiting for a question'),
+      state: questionProgress?.steps.understand.state ?? (questionWorkflowItem?.validation ? 'passed' : 'idle'),
     },
     {
       number: '02',
-      title: 'Validate evidence',
-      detail: questionProgress?.steps.validate.detail ?? (questionWorkflowItem?.validation?.retried ? 'Coverage was weak, so research ran again' : questionWorkflowItem?.validation ? 'Source coverage checked' : 'Source coverage will be checked'),
-      state: questionProgress?.steps.validate.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle'),
+      title: 'Search Reddit',
+      detail: questionProgress?.steps.research.detail ?? (questionWorkflowItem?.validation
+        ? `${questionWorkflowItem.validation.verified} verified threads across ${questionWorkflowItem.validation.communities} communities`
+        : 'Waiting for an evidence target'),
+      state: questionProgress?.steps.research.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle'),
     },
     {
       number: '03',
-      title: 'Write answer',
+      title: 'Filter threads',
+      detail: questionProgress?.steps.filter.detail ?? (questionWorkflowItem?.validation ? `${questionWorkflowItem.validation.checked} candidates checked` : 'Duplicates and invalid links will be removed'),
+      state: questionProgress?.steps.filter.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.verified ? 'passed' : 'review') : 'idle'),
+    },
+    {
+      number: '04',
+      title: 'Score evidence',
+      detail: questionProgress?.steps.validate.detail ?? (questionWorkflowItem?.validation ? `Evidence score ${questionWorkflowItem.validation.score}/100 · coverage ${questionWorkflowItem.validation.coverage}%` : 'Relevance, diversity and coverage will be scored'),
+      state: questionProgress?.steps.validate.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle'),
+    },
+    {
+      number: '05',
+      title: 'Refine research',
+      detail: questionProgress?.steps.refine.detail ?? (questionWorkflowItem?.validation?.retried ? 'A focused second search was completed' : questionWorkflowItem?.validation ? 'Initial evidence did not need refinement' : 'Weak evidence will trigger a focused retry'),
+      state: questionProgress?.steps.refine.state ?? (questionWorkflowItem?.validation ? 'passed' : 'idle'),
+    },
+    {
+      number: '06',
+      title: 'Map claims',
       detail: questionProgress?.steps.answer.detail ?? (questionWorkflowItem?.run ? `${questionWorkflowItem.run.claims.length} source-backed claims mapped` : 'Answer will be mapped to sources'),
       state: questionProgress?.steps.answer.state ?? (questionWorkflowItem?.run ? (questionWorkflowItem.run.attempts.find(a => a.stage === 'answer')?.passed ? 'passed' : 'review') : 'idle'),
     },
     {
-      number: '04',
+      number: '07',
       title: 'Correct and check',
       detail: questionProgress?.steps.correct.detail ?? (questionWorkflowItem?.run?.attempts.some(a => a.stage === 'answer correction')
         ? `Answer correction ${questionWorkflowItem.run.attempts.find(a => a.stage === 'answer correction')?.passed ? 'passed' : 'needs review'}`
@@ -1016,7 +1037,7 @@ export default function App() {
         {view === 'board' && <Board board={board} setBoard={setBoard} onGoToResults={() => setView('results')} />}
 
         {view === 'questions' && (
-          <div className={`max-w-6xl mx-auto grid gap-6 items-start ${scottActive ? 'lg:grid-cols-[minmax(0,1fr)_300px]' : 'grid-cols-1'}`}>
+          <div className={`max-w-7xl mx-auto grid gap-6 items-start ${scottActive ? 'lg:grid-cols-[minmax(0,1fr)_380px]' : 'grid-cols-1'}`}>
             <div className="min-w-0">
             <div className="border-b border-[#242a33] pb-6">
               <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
@@ -1179,7 +1200,7 @@ export default function App() {
               </div>
             )}
             </div>
-            {scottActive && <aside className="lg:sticky lg:top-8 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
+            {scottActive && <aside className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto rounded-2xl border border-[#242a33] bg-[#111419] p-5 shadow-[0_20px_55px_rgba(0,0,0,0.28)]">
               <div className="flex items-center justify-between pb-4 border-b border-[#242a33]">
                 <div>
                   <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#747a84]">Question run</p>
@@ -1187,16 +1208,21 @@ export default function App() {
                 </div>
                 <span className={`w-2.5 h-2.5 rounded-full ${questionProgress?.running ? 'bg-[#ff4500] animate-pulse' : questionWorkflowItem?.run?.passed ? 'bg-[#50c878]' : 'bg-[#5c6470]'}`} />
               </div>
-              <div className="mt-5">
+              <div className="mt-5 space-y-3">
                 {questionWorkflowSteps.map((step, index) => (
-                  <div key={step.number} className="relative flex gap-3 pb-5 last:pb-0">
-                    {index < questionWorkflowSteps.length - 1 && <div className="absolute left-[15px] top-8 bottom-0 w-px bg-[#30353e]" />}
-                    <div className={`relative z-10 w-8 h-8 rounded-lg border flex items-center justify-center text-[10px] font-semibold ${step.state === 'passed' ? 'border-[#50c878]/40 bg-[#50c878]/10 text-[#50c878]' : step.state === 'active' ? 'border-[#ff4500]/50 bg-[#ff4500]/10 text-[#ff6a33]' : step.state === 'review' ? 'border-amber-300/40 bg-amber-300/10 text-amber-300' : 'border-[#30353e] bg-[#101114] text-[#747a84]'}`}>
-                      {step.state === 'passed' ? '✓' : step.number}
-                    </div>
-                    <div className="pt-0.5 min-w-0">
-                      <p className="text-sm font-medium text-[#e8eaed]">{step.title}</p>
-                      <p className="mt-1 text-xs leading-relaxed text-[#9aa4b2]">{step.detail}</p>
+                  <div key={step.number} className="relative">
+                    {index < questionWorkflowSteps.length - 1 && <div className={`absolute left-[19px] top-full h-3 w-px ${step.state === 'passed' ? 'bg-[#50c878]/45' : 'bg-[#30353e]'}`} />}
+                    <div className={`flex gap-3 rounded-xl border p-3 transition-all duration-300 ${step.state === 'passed' ? 'border-[#50c878]/25 bg-[#50c878]/5' : step.state === 'active' ? 'border-[#ff4500]/45 bg-[#ff4500]/8 shadow-[0_0_24px_rgba(255,69,0,0.1)]' : step.state === 'review' ? 'border-amber-300/30 bg-amber-300/5' : 'border-[#242a33] bg-[#0d0f13]'}`}>
+                      <div className={`relative z-10 w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center text-[10px] font-semibold ${step.state === 'passed' ? 'border-[#50c878]/40 bg-[#50c878]/10 text-[#50c878]' : step.state === 'active' ? 'border-[#ff4500]/50 bg-[#ff4500]/10 text-[#ff6a33] animate-pulse' : step.state === 'review' ? 'border-amber-300/40 bg-amber-300/10 text-amber-300' : 'border-[#30353e] bg-[#101114] text-[#747a84]'}`}>
+                        {step.state === 'passed' ? '✓' : step.number}
+                      </div>
+                      <div className="pt-0.5 min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-[#e8eaed]">{step.title}</p>
+                          <span className={`text-[9px] uppercase tracking-[0.08em] ${step.state === 'passed' ? 'text-[#50c878]' : step.state === 'active' ? 'text-[#ff6a33]' : step.state === 'review' ? 'text-amber-300' : 'text-[#5c6470]'}`}>{step.state}</span>
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-[#9aa4b2]">{step.detail}</p>
+                      </div>
                     </div>
                   </div>
                 ))}
