@@ -238,6 +238,10 @@ class ScottAccessUpdate(BaseModel):
     enabled: bool
 
 
+class ScottInviteRequest(BaseModel):
+    email: str
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -283,6 +287,46 @@ async def scott_admin_access(
         raise HTTPException(status_code=404, detail="This user must sign in once before access can be changed.")
     await set_scott_user_access(user, req.enabled)
     return {"email": email, "enabled": req.enabled}
+
+
+@app.post("/scott-admin/invite")
+async def scott_admin_invite(
+    req: ScottInviteRequest,
+    identity: Optional[dict] = Depends(get_current_identity),
+):
+    require_scott_admin(identity)
+    email = req.email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+
+    users = await list_supabase_users()
+    if any(str(user.get("email", "")).strip().lower() == email for user in users):
+        raise HTTPException(status_code=409, detail="This user already has an account. Use Enable instead.")
+
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{SUPABASE_URL}/auth/v1/invite",
+            params={"redirect_to": "https://gohooklive.vercel.app"},
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                "Content-Type": "application/json",
+            },
+            json={"email": email},
+            timeout=15,
+        )
+    if res.status_code >= 400:
+        error_payload = res.json()
+        detail = error_payload.get("msg") or error_payload.get("message") or "Could not send invite."
+        logger.error("Could not invite Scott user: %s", res.status_code)
+        raise HTTPException(status_code=502, detail=detail)
+
+    invite_payload = res.json()
+    invited_user = invite_payload.get("user", invite_payload)
+    if not invited_user.get("id"):
+        raise HTTPException(status_code=502, detail="Invite was sent, but Scott access could not be prepared.")
+    await set_scott_user_access(invited_user, True)
+    return {"email": email, "enabled": True, "invited": True}
 
 
 @app.post("/reddit/connect")

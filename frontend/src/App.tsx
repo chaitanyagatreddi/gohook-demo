@@ -280,6 +280,7 @@ export default function App() {
   const [scottAdminEmail, setScottAdminEmail] = useState('')
   const [scottAdminBusy, setScottAdminBusy] = useState('')
   const [scottAdminError, setScottAdminError] = useState('')
+  const [scottAdminNotice, setScottAdminNotice] = useState('')
   const scottActive = scottAvailable && scottEnabled
 
   function toggleQuestion(index: number) {
@@ -547,6 +548,7 @@ export default function App() {
     if (!normalizedEmail) return
     setScottAdminBusy(normalizedEmail)
     setScottAdminError('')
+    setScottAdminNotice('')
     try {
       const headers = await authHeaders()
       const response = await fetch(`${API}/scott-admin/access`, {
@@ -566,6 +568,31 @@ export default function App() {
       if (session?.user.email?.toLowerCase() === normalizedEmail) await refreshScottAccess()
     } catch (error: unknown) {
       setScottAdminError(error instanceof Error ? error.message : 'Could not update access')
+    } finally {
+      setScottAdminBusy('')
+    }
+  }
+
+  async function inviteScottUser(email: string) {
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail) return
+    setScottAdminBusy(normalizedEmail)
+    setScottAdminError('')
+    setScottAdminNotice('')
+    try {
+      const headers = await authHeaders()
+      const response = await fetch(`${API}/scott-admin/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ email: normalizedEmail }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not send invite')
+      setScottAdminUsers(prev => [...prev, { email: normalizedEmail, enabled: true }])
+      setScottAdminEmail('')
+      setScottAdminNotice(`Invite sent to ${normalizedEmail}`)
+    } catch (error: unknown) {
+      setScottAdminError(error instanceof Error ? error.message : 'Could not send invite')
     } finally {
       setScottAdminBusy('')
     }
@@ -1340,8 +1367,17 @@ export default function App() {
                   >
                     Enable
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => inviteScottUser(scottAdminEmail)}
+                    disabled={!scottAdminEmail.trim() || Boolean(scottAdminBusy)}
+                    className="border border-[#ff4500] text-[#ff6a33] hover:bg-[#ff4500]/10 px-3 py-2 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
+                  >
+                    Invite
+                  </button>
                 </div>
                 {scottAdminError && <p className="mt-2 text-xs text-red-400">{scottAdminError}</p>}
+                {scottAdminNotice && <p className="mt-2 text-xs text-green-400">{scottAdminNotice}</p>}
                 <div className="mt-4 divide-y divide-[#242a33] border-t border-[#242a33]">
                   {scottAdminUsers.map(user => (
                     <div key={user.email} className="flex items-center justify-between gap-3 py-3">
