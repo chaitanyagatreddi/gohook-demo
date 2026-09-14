@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
-from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
+from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
 from graph import ingest_threads, link_user_to_threads, read_graph
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -633,21 +633,28 @@ async def question_answer(
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
+    try:
+        prompt = await run_in_threadpool(expand_short_question, req.question)
+        research_question = prompt["research_question"]
+    except Exception:
+        logger.exception("Short prompt expansion failed; using the original question")
+        research_question = req.question.strip()
+
     # Look it up first, so the answer comes from sources rather than memory.
     # If the search fails we still answer, but the reply says it is unsourced.
     results, validation = [], {"checked": 0, "verified": 0, "communities": 0, "retried": False, "passed": False}
     try:
-        results, validation = await research_reddit_with_review(req.question)
+        results, validation = await research_reddit_with_review(research_question)
     except Exception:
         logger.exception("Web search failed, answering without sources")
 
     try:
-        answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
+        answer = await run_in_threadpool(generate_question_answer, req.brief, research_question, results)
         answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
         attempts = [{"stage": "research", "passed": validation["passed"], "retried": validation["retried"]}, {"stage": "answer", "passed": answer_review["passed"]}]
         if results and not answer_review["passed"]:
             feedback = "Each factual claim needs valid source IDs and every source ID must appear as a matching [S1] citation."
-            answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
+            answer = await run_in_threadpool(generate_question_answer, req.brief, research_question, results, feedback)
             answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
             attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
         answer["validation"] = validation
@@ -751,11 +758,18 @@ async def question_answer_stream(
 
     async def events():
         try:
+            try:
+                prompt = await run_in_threadpool(expand_short_question, req.question)
+                research_question = prompt["research_question"]
+            except Exception:
+                logger.exception("Short prompt expansion failed; using the original question")
+                prompt = {"expanded": False}
+                research_question = req.question.strip()
             if scott_visible:
                 yield _question_event({"type": "stage", "stage": "understand", "status": "active", "detail": "Reading the question and its evidence target"})
-                yield _question_event({"type": "stage", "stage": "understand", "status": "passed", "detail": "Question understood; evidence search prepared"})
+                yield _question_event({"type": "stage", "stage": "understand", "status": "passed", "detail": "Short prompt expanded into a research target" if prompt["expanded"] else "Question understood; evidence search prepared"})
                 yield _question_event({"type": "stage", "stage": "research", "status": "active", "detail": "Searching Reddit"})
-            initial = await search_web(req.question, limit=6, reddit_only=True)
+            initial = await search_web(research_question, limit=6, reddit_only=True)
             if scott_visible:
                 yield _question_event({"type": "stage", "stage": "research", "status": "passed", "detail": f"{len(initial)} sources found"})
 
@@ -765,19 +779,19 @@ async def question_answer_stream(
             if scott_visible:
                 yield _question_event({"type": "stage", "stage": "filter", "status": "passed" if candidates else "review", "detail": f"{len(candidates)} verified Reddit threads remain"})
                 yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Scoring source relevance"})
-            evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
+            evidence = await run_in_threadpool(evaluate_question_sources, research_question, candidates)
             retried = not evidence["passed"]
 
             if retried:
                 if scott_visible:
                     yield _question_event({"type": "stage", "stage": "validate", "status": "review", "detail": f"Evidence score {evidence['score']}/100; refining research"})
                     yield _question_event({"type": "stage", "stage": "refine", "status": "active", "detail": "Running a focused second search"})
-                retry = await search_web(f"{req.question} experience discussion", limit=6, reddit_only=True)
+                retry = await search_web(f"{research_question} experience discussion", limit=6, reddit_only=True)
                 candidates = verified_reddit_threads(initial + retry)
                 if scott_visible:
                     yield _question_event({"type": "stage", "stage": "refine", "status": "passed", "detail": f"Added {len(retry)} candidates; {len(candidates)} verified threads remain"})
                     yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Rescoring refined evidence"})
-                evidence = await run_in_threadpool(evaluate_question_sources, req.question, candidates)
+                evidence = await run_in_threadpool(evaluate_question_sources, research_question, candidates)
             elif scott_visible:
                 yield _question_event({"type": "stage", "stage": "refine", "status": "passed", "detail": "Not needed; initial evidence passed"})
 
@@ -814,7 +828,7 @@ async def question_answer_stream(
             if scott_visible:
                 yield _question_event({"type": "stage", "stage": "answer", "status": "active", "detail": "Mapping claims to sources"})
             if validation["passed"] and results:
-                answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results)
+                answer = await run_in_threadpool(generate_question_answer, req.brief, research_question, results)
             else:
                 answer = {
                     "answer": "I couldn't find enough relevant Reddit evidence to give a reliable answer to this question.",
@@ -848,7 +862,7 @@ async def question_answer_stream(
                 if scott_visible:
                     yield _question_event({"type": "stage", "stage": "correct", "status": "active", "detail": "Correcting unsupported citations"})
                 feedback = "Every factual claim needs valid source IDs, every source ID must appear as a matching [S1] citation, and every citation in the answer must be represented in the claims map."
-                answer = await run_in_threadpool(generate_question_answer, req.brief, req.question, results, feedback)
+                answer = await run_in_threadpool(generate_question_answer, req.brief, research_question, results, feedback)
                 answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
                 attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
                 if scott_visible:
