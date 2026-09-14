@@ -268,6 +268,7 @@ export default function App() {
   const [questionBrief, setQuestionBrief] = useState('')
   const [questionBatch, setQuestionBatch] = useState<QuestionAnswer[]>([])
   const [questionMemory, setQuestionMemory] = useState<QuestionMemory[]>([])
+  const [questionMemoryOpen, setQuestionMemoryOpen] = useState(false)
   const [questionBatchError, setQuestionBatchError] = useState('')
   const [answeringIndex, setAnsweringIndex] = useState<number | null>(null)
   const [answerErrors, setAnswerErrors] = useState<Record<number, string>>({})
@@ -1142,22 +1143,34 @@ export default function App() {
         {view === 'questions' && (
           <div className={`max-w-7xl mx-auto grid gap-6 items-start ${scottActive ? 'lg:grid-cols-[minmax(0,1fr)_380px]' : 'grid-cols-1'}`}>
             <div className="min-w-0">
-            <div className="border-b border-[#242a33] pb-6">
-              <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
-              <p className="text-sm text-[#9aa4b2] mt-2">Enter 1 to 3 questions, one per line. Generate each answer individually.</p>
+            <div className="border-b border-[#242a33] pb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
+                <p className="text-sm text-[#9aa4b2] mt-2">Enter 1 to 3 questions, one per line. Generate each answer individually.</p>
+              </div>
+              <button
+                onClick={() => setQuestionMemoryOpen(open => !open)}
+                className="shrink-0 bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+              >
+                {questionMemoryOpen ? 'Close memory' : `Question memory${questionMemory.length ? ` · ${questionMemory.length}` : ''}`}
+              </button>
             </div>
-            {questionMemory.length > 0 && (
-              <details className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5">
-                <summary className="cursor-pointer text-sm font-semibold text-[#e8eaed]">Question memory · {questionMemory.length} previous questions</summary>
-                <div className="mt-4 space-y-3">
-                  {questionMemory.map((item, index) => (
-                    <article key={`${item.question}-${item.saved_at ?? index}`} className="rounded-xl border border-[#242a33] bg-[#0d0f13] p-4">
-                      <h3 className="text-sm font-semibold text-[#e8eaed]">{item.question}</h3>
-                      {item.answer && <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
-                    </article>
-                  ))}
-                </div>
-              </details>
+            {questionMemoryOpen && (
+              <section className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5">
+                <h3 className="text-sm font-semibold text-[#e8eaed]">Question memory</h3>
+                {questionMemory.length === 0 ? (
+                  <p className="mt-2 text-sm text-[#9aa4b2]">No completed questions saved yet.</p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {questionMemory.map((item, index) => (
+                      <article key={`${item.question}-${item.saved_at ?? index}`} className="rounded-xl border border-[#242a33] bg-[#0d0f13] p-4">
+                        <h3 className="text-sm font-semibold text-[#e8eaed]">{item.question}</h3>
+                        {item.answer && <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
             <div className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
               <textarea
