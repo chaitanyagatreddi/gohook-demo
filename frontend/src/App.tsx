@@ -332,10 +332,10 @@ export default function App() {
       return
     }
     const items = questions.map(question => ({ question, layer: 1 }))
-    setAnswerErrors({})
+    const startIndex = questionBatch.length
     setQuestionProgress(null)
-    setQuestionBatch(items)
-    if (items.length === 1) await generateAnswer(0, items[0])
+    setQuestionBatch(previous => [...previous, ...items])
+    if (items.length === 1) await generateAnswer(startIndex, items[0])
   }
 
   async function generateAnswer(index: number, overrideItem?: QuestionAnswer) {
