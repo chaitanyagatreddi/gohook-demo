@@ -1032,8 +1032,8 @@ export default function App() {
     <div className="min-h-screen bg-[#0a0b0d] text-[#f1f2f4] flex items-start">
       {/* Left rail. Layout borrowed from GTM Predictor; GoHook colours. */}
       {!(showAuthGate && !session) && (
-        <aside className="sticky top-0 h-screen flex-none w-16 md:w-60 flex flex-col bg-[#101114] border-r border-[#272a30] py-5">
-          <div className="px-0 md:px-5 mb-8 flex flex-col items-center md:items-start">
+        <aside className="fixed bottom-0 left-0 right-0 z-30 h-16 w-full flex flex-none flex-row bg-[#101114] border-t border-[#272a30] md:sticky md:top-0 md:h-screen md:w-60 md:flex-col md:border-t-0 md:border-r md:py-5">
+          <div className="hidden md:flex px-5 mb-8 flex-col items-start">
             <div className="flex items-center gap-2">
               <svg viewBox="0 0 32 32" className="w-[22px] h-[22px] flex-none" aria-hidden="true">
                 <g stroke="#ff4500" strokeWidth="2" fill="none">
@@ -1049,7 +1049,7 @@ export default function App() {
               Your knowledge graph for Reddit.
             </p>
           </div>
-          <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-col gap-1.5">
+          <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-row md:flex-col gap-1.5">
             {([
               { key: 'results', label: 'Results', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
               { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
@@ -1061,11 +1061,11 @@ export default function App() {
                 key={item.key}
                 onClick={() => setView(item.key)}
                 title={item.label}
-                className={`group relative flex items-center justify-center md:justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${view === item.key ? 'bg-[#1c1e23] text-[#f7f7f8] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]' : 'text-[#858b95] hover:text-[#e8eaed] hover:bg-[#191b1f]'}`}
+                className={`group relative flex flex-1 flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 px-2 md:px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${view === item.key ? 'bg-[#1c1e23] text-[#f7f7f8] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]' : 'text-[#858b95] hover:text-[#e8eaed] hover:bg-[#191b1f]'}`}
               >
                 {view === item.key && <span className="absolute left-0 h-4 w-0.5 rounded-full bg-[#ff6a33]" aria-hidden="true" />}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="w-[17px] h-[17px] flex-none">{item.icon}</svg>
-                <span className="hidden md:inline">
+                <span className="text-[10px] leading-none md:text-sm md:inline">
                   {item.label}
                   {item.key === 'board' && board.length > 0 && <span className="opacity-80"> ({board.length})</span>}
                 </span>
@@ -1073,7 +1073,7 @@ export default function App() {
             ))}
           </nav>
           {session && (
-            <div className="px-2 pb-3 md:px-3">
+            <div className="px-2 pb-2 md:px-3 md:pb-3">
               <button
                 type="button"
                 onClick={signOut}
@@ -1092,7 +1092,7 @@ export default function App() {
         </aside>
       )}
 
-      <main className="flex-1 min-w-0">
+      <main className="flex-1 min-w-0 pb-16 md:pb-0">
       {showAuthGate && !session ? (
         <div className="max-w-3xl mx-auto px-4 py-10">
           {gateLoading ? (
@@ -1129,9 +1129,6 @@ export default function App() {
                 for Reddit.
               </span>
             </h2>
-            <p className="text-[#9aa4b2] mt-3 max-w-md mx-auto">
-              Drop a product name. Get the pricing, complaints, and comparisons, ranked, no scrolling.
-            </p>
           </div>
         )}
 
@@ -1141,7 +1138,7 @@ export default function App() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && doSearch(query)}
-            placeholder="Ask anything about Reddit (e.g. what do founders hate about HubSpot?)"
+            placeholder="Ask a Reddit question…"
             className="flex-1 min-w-0 bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
           />
           <button
@@ -1177,7 +1174,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => setQuestionMemoryOpen(open => !open)}
-                className="mt-4 w-full sm:w-auto bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+                className="mt-4 inline-flex w-auto border border-[#ff4500] bg-transparent hover:bg-[#ff4500]/10 text-[#ff6a33] px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
               >
                 {questionMemoryOpen ? 'Close memory' : `Question memory${questionMemory.length ? ` · ${questionMemory.length}` : ''}`}
               </button>
@@ -1203,15 +1200,15 @@ export default function App() {
               <textarea
                 value={questionBrief}
                 onChange={e => setQuestionBrief(e.target.value)}
-                rows={3}
-                placeholder={'What problem are users trying to solve?\nWhat alternatives do they compare?\nWhat makes them switch?'}
-                className="w-full bg-[#0b0d10] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
+                rows={5}
+                placeholder={'What problem are users solving?\nWhat do they compare?\nWhy do they switch?'}
+                className="w-full min-h-[150px] sm:min-h-0 bg-[#0b0d10] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
               />
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={createQuestionBatch}
                   disabled={!questionBrief.trim()}
-                  className="w-full sm:w-auto min-h-12 bg-[#ff4500] hover:bg-[#ff6a33] text-white px-6 py-3 rounded-xl text-sm font-semibold shadow-[0_8px_20px_rgba(255,69,0,0.22)] disabled:opacity-40 transition-colors"
+                  className="w-full sm:w-auto min-h-12 bg-[#ff4500] hover:bg-[#ff6a33] text-white px-6 py-3 rounded-xl text-sm font-semibold shadow-[0_8px_20px_rgba(255,69,0,0.22)] disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
                 >
                     {questionBrief.split('\n').map(question => question.trim()).filter(Boolean).length === 1 ? 'Start question' : 'Create question batch'}
                 </button>

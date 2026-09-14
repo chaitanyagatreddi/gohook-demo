@@ -461,8 +461,8 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
   // Not signed in: there is nothing to show, because a graph belongs to a person.
   if (!signedIn) {
     return (
-      <main className="relative flex-1 min-w-0 h-screen overflow-hidden flex items-center justify-center px-6 bg-[#0a0b0d]">
-        <svg aria-hidden="true" viewBox="0 0 1000 700" className="absolute w-[min(1100px,92vw)] h-auto opacity-60">
+      <main className="relative flex-1 min-w-0 h-screen max-w-full overflow-hidden flex items-center justify-center px-4 sm:px-6 bg-[#0a0b0d]">
+        <svg aria-hidden="true" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet" className="absolute left-1/2 max-w-full -translate-x-1/2 w-[min(1100px,92vw)] h-auto opacity-60">
           <g stroke="rgba(148,163,184,0.26)" strokeWidth="1">
             <path d="M110 350L245 210L405 300L560 150L730 265L900 125" />
             <path d="M110 350L270 505L405 300L540 495L730 265L895 470" />
@@ -502,8 +502,8 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
   }
 
   return (
-    <main className="flex-1 min-w-0 h-screen overflow-hidden flex flex-col bg-[#0a0b0d]">
-      <header className="px-6 pt-6 pb-4 flex items-center gap-3 flex-wrap border-b border-[#1d2025]">
+    <main className="flex-1 min-w-0 min-h-screen lg:h-screen lg:overflow-hidden flex flex-col bg-[#0a0b0d]">
+      <header className="px-4 sm:px-6 pt-5 sm:pt-6 pb-4 flex items-center gap-3 flex-wrap border-b border-[#1d2025]">
         <h2 className="text-lg font-semibold tracking-[-0.02em]">Your graph</h2>
         <span className="text-xs text-[#7f858e]">Threads, communities and topics you've searched or saved.</span>
 
@@ -528,7 +528,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
 
       {/* Reddit account. Hidden once connected and pulled in, unless something went wrong. */}
       {!redditHidden && (
-        <div className="mx-6 mb-3 rounded-xl bg-[#121417] border border-[#272a30] px-4 py-3 flex items-center gap-3 flex-wrap shadow-[0_12px_30px_rgba(0,0,0,0.12)]">
+        <div className="mx-4 sm:mx-6 mb-3 rounded-xl bg-[#121417] border border-[#272a30] px-4 py-3 flex items-center gap-3 flex-wrap shadow-[0_12px_30px_rgba(0,0,0,0.12)]">
           <span className={`w-2 h-2 rounded-full flex-none ${reddit?.connected ? 'bg-[#50c878]' : 'bg-[#ff4500]'}`} />
 
           <p className="text-sm flex-1 min-w-[240px]">
@@ -580,7 +580,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
       )}
 
       {/* Counts across the top. */}
-      <div className="px-6 pt-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="px-4 sm:px-6 pt-2 grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Threads', value: visible.nodes.filter(n => n.kind === 'thread').length },
           { label: 'Communities', value: visible.nodes.filter(n => n.kind === 'subreddit').length },
@@ -594,7 +594,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
         ))}
       </div>
 
-      <div className="flex-1 min-h-0 px-6 py-4 flex gap-4">
+      <div className="flex-1 min-h-0 min-w-0 px-4 sm:px-6 py-4 flex flex-col lg:flex-row gap-4">
         {/* The picture. */}
         <div className="flex-1 min-w-0 rounded-xl border border-[#2a2d33] relative overflow-hidden bg-[radial-gradient(circle_at_50%_45%,rgba(255,106,51,0.06),transparent_38%),linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px),#101114] bg-[size:auto,28px_28px,28px_28px,auto] shadow-[0_20px_50px_rgba(0,0,0,0.2)]">
           {loading && <p className="absolute inset-0 grid place-items-center text-sm text-[#9aa4b2]">Loading your graph…</p>}
@@ -664,7 +664,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
         </div>
 
         {/* Details on the right. */}
-        <aside className="w-[320px] flex-none flex flex-col gap-3 overflow-y-auto">
+        <aside className="hidden lg:flex w-[320px] flex-none flex-col gap-3 overflow-y-auto">
           {!selectedNode ? (
             <>
               <div className="flex flex-wrap gap-2">
