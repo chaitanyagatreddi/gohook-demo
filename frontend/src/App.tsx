@@ -1283,9 +1283,11 @@ export default function App() {
                     aria-checked={scottEnabled}
                     aria-label={scottEnabled ? 'Disable Scott' : 'Enable Scott'}
                     onClick={toggleScott}
-                    className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${scottEnabled ? 'bg-[#ff4500]' : 'bg-[#30353e]'}`}
+                    className={`relative h-8 w-14 shrink-0 overflow-hidden rounded-full border transition-all duration-300 ${scottEnabled ? 'border-[#ff6a33] bg-[#ff4500] shadow-[inset_0_1px_4px_rgba(255,255,255,0.32),0_0_18px_rgba(255,69,0,0.24)]' : 'border-[#3a414c] bg-[#242a33] shadow-inner'}`}
                   >
-                    <span className={`absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${scottEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                    <span className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-transform duration-300 ease-out ${scottEnabled ? 'translate-x-6' : 'translate-x-0'}`}>
+                      <span className={`h-2 w-2 rounded-full transition-colors ${scottEnabled ? 'bg-[#ff4500]' : 'bg-[#9aa4b2]'}`} />
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1325,9 +1327,11 @@ export default function App() {
                         aria-label={`${user.enabled ? 'Disable' : 'Enable'} Scott for ${user.email}`}
                         onClick={() => updateScottAccess(user.email, !user.enabled)}
                         disabled={Boolean(scottAdminBusy)}
-                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-40 ${user.enabled ? 'bg-[#ff4500]' : 'bg-[#30353e]'}`}
+                        className={`relative h-8 w-14 shrink-0 overflow-hidden rounded-full border transition-all duration-300 disabled:opacity-40 ${user.enabled ? 'border-[#ff6a33] bg-[#ff4500] shadow-[inset_0_1px_4px_rgba(255,255,255,0.32),0_0_18px_rgba(255,69,0,0.24)]' : 'border-[#3a414c] bg-[#242a33] shadow-inner'}`}
                       >
-                        <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${user.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                        <span className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-transform duration-300 ease-out ${user.enabled ? 'translate-x-6' : 'translate-x-0'}`}>
+                          <span className={`h-2 w-2 rounded-full transition-colors ${user.enabled ? 'bg-[#ff4500]' : 'bg-[#9aa4b2]'}`} />
+                        </span>
                       </button>
                     </div>
                   ))}
