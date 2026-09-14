@@ -324,16 +324,18 @@ export default function App() {
     setPickedQuestions(new Set())
   }
 
-  function createQuestionBatch() {
+  async function createQuestionBatch() {
     const questions = questionBrief.split('\n').map(question => question.trim()).filter(Boolean)
     setQuestionBatchError('')
     if (questions.length < 1 || questions.length > 3) {
       setQuestionBatchError('Enter 1 to 3 questions, one per line.')
       return
     }
+    const items = questions.map(question => ({ question, layer: 1 }))
     setAnswerErrors({})
     setQuestionProgress(null)
-    setQuestionBatch(questions.map(question => ({ question, layer: 1 })))
+    setQuestionBatch(items)
+    if (items.length === 1) await generateAnswer(0, items[0])
   }
 
   async function generateAnswer(index: number, overrideItem?: QuestionAnswer) {
