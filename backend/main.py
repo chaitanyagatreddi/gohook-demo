@@ -181,6 +181,32 @@ async def set_scott_user_access(user: dict, enabled: bool) -> None:
         raise HTTPException(status_code=502, detail="Could not update access.")
 
 
+async def invite_scott_user(email: str) -> None:
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{SUPABASE_URL}/auth/v1/invite",
+            params={"redirect_to": "https://gohooklive.vercel.app"},
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                "Content-Type": "application/json",
+            },
+            json={"email": email},
+            timeout=15,
+        )
+    if res.status_code >= 400:
+        error_payload = res.json()
+        detail = error_payload.get("msg") or error_payload.get("message") or "Could not send invite."
+        logger.error("Could not invite Scott user: %s", res.status_code)
+        raise HTTPException(status_code=502, detail=detail)
+
+    invite_payload = res.json()
+    invited_user = invite_payload.get("user", invite_payload)
+    if not invited_user.get("id"):
+        raise HTTPException(status_code=502, detail="Invite was sent, but Scott access could not be prepared.")
+    await set_scott_user_access(invited_user, True)
+
+
 async def require_user(authorization: Optional[str] = Header(None)):
     """Same as get_current_user but always requires a valid session."""
     if not authorization:
@@ -284,7 +310,10 @@ async def scott_admin_access(
     users = await list_supabase_users()
     user = next((candidate for candidate in users if str(candidate.get("email", "")).strip().lower() == email), None)
     if not user:
-        raise HTTPException(status_code=404, detail="This user must sign in once before access can be changed.")
+        if req.enabled:
+            await invite_scott_user(email)
+            return {"email": email, "enabled": True, "invited": True}
+        raise HTTPException(status_code=404, detail="This user does not have an account.")
     await set_scott_user_access(user, req.enabled)
     return {"email": email, "enabled": req.enabled}
 
@@ -303,29 +332,7 @@ async def scott_admin_invite(
     if any(str(user.get("email", "")).strip().lower() == email for user in users):
         raise HTTPException(status_code=409, detail="This user already has an account. Use Enable instead.")
 
-    async with httpx.AsyncClient() as client:
-        res = await client.post(
-            f"{SUPABASE_URL}/auth/v1/invite",
-            params={"redirect_to": "https://gohooklive.vercel.app"},
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                "apikey": SUPABASE_SERVICE_ROLE_KEY,
-                "Content-Type": "application/json",
-            },
-            json={"email": email},
-            timeout=15,
-        )
-    if res.status_code >= 400:
-        error_payload = res.json()
-        detail = error_payload.get("msg") or error_payload.get("message") or "Could not send invite."
-        logger.error("Could not invite Scott user: %s", res.status_code)
-        raise HTTPException(status_code=502, detail=detail)
-
-    invite_payload = res.json()
-    invited_user = invite_payload.get("user", invite_payload)
-    if not invited_user.get("id"):
-        raise HTTPException(status_code=502, detail="Invite was sent, but Scott access could not be prepared.")
-    await set_scott_user_access(invited_user, True)
+    await invite_scott_user(email)
     return {"email": email, "enabled": True, "invited": True}
 
 

@@ -558,6 +558,7 @@ export default function App() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.detail || 'Could not update access')
+      if (data.invited) setScottAdminNotice(`Invite sent to ${normalizedEmail}`)
       setScottAdminUsers(prev => {
         const exists = prev.some(user => user.email === normalizedEmail)
         return exists
