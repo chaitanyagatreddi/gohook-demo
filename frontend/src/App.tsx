@@ -1061,7 +1061,7 @@ export default function App() {
                 key={item.key}
                 onClick={() => setView(item.key)}
                 title={item.label}
-                className={`group relative flex flex-1 flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 px-2 md:px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${view === item.key ? 'bg-[#1c1e23] text-[#f7f7f8] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]' : 'text-[#858b95] hover:text-[#e8eaed] hover:bg-[#191b1f]'}`}
+                className={`group relative flex flex-1 md:flex-none flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 px-2 md:px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${view === item.key ? 'bg-[#1c1e23] text-[#f7f7f8] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]' : 'text-[#858b95] hover:text-[#e8eaed] hover:bg-[#191b1f]'}`}
               >
                 {view === item.key && <span className="hidden md:block absolute left-0 h-4 w-0.5 rounded-full bg-[#ff6a33]" aria-hidden="true" />}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="w-[17px] h-[17px] flex-none">{item.icon}</svg>
