@@ -119,6 +119,7 @@ type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSou
 type QuestionStageKey = 'research' | 'validate' | 'answer' | 'correct'
 type QuestionStage = { state: 'idle' | 'active' | 'passed' | 'review'; detail: string }
 type QuestionProgress = { questionIndex: number; running: boolean; steps: Record<QuestionStageKey, QuestionStage> }
+type ScottAdminUser = { email: string; enabled: boolean }
 
 const TAB_META: Record<Tab, { icon: string; label: string }> = {
   pricing: { icon: '💰', label: 'Pricing' },
@@ -274,6 +275,11 @@ export default function App() {
   const [scottEnabled, setScottEnabled] = useState(() => {
     try { return localStorage.getItem('gohook_scott_enabled') !== 'false' } catch { return true }
   })
+  const [scottAdminVisible, setScottAdminVisible] = useState(false)
+  const [scottAdminUsers, setScottAdminUsers] = useState<ScottAdminUser[]>([])
+  const [scottAdminEmail, setScottAdminEmail] = useState('')
+  const [scottAdminBusy, setScottAdminBusy] = useState('')
+  const [scottAdminError, setScottAdminError] = useState('')
   const scottActive = scottAvailable && scottEnabled
 
   function toggleQuestion(index: number) {
@@ -491,9 +497,11 @@ export default function App() {
   useEffect(() => {
     if (!session) {
       setScottAvailable(false)
+      setScottAdminVisible(false)
       return
     }
     void refreshScottAccess()
+    void refreshScottAdmin()
   }, [session])
 
   async function refreshScottAccess() {
@@ -511,6 +519,52 @@ export default function App() {
     } catch {
       setScottAvailable(false)
       return false
+    }
+  }
+
+  async function refreshScottAdmin() {
+    const headers = await authHeaders()
+    if (!headers.Authorization) return
+    try {
+      const response = await fetch(`${API}/scott-admin/users`, { headers })
+      if (!response.ok) {
+        setScottAdminVisible(false)
+        return
+      }
+      const data = await response.json()
+      setScottAdminUsers(data.users ?? [])
+      setScottAdminVisible(true)
+    } catch {
+      setScottAdminVisible(false)
+    }
+  }
+
+  async function updateScottAccess(email: string, enabled: boolean) {
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail) return
+    setScottAdminBusy(normalizedEmail)
+    setScottAdminError('')
+    try {
+      const headers = await authHeaders()
+      const response = await fetch(`${API}/scott-admin/access`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ email: normalizedEmail, enabled }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not update access')
+      setScottAdminUsers(prev => {
+        const exists = prev.some(user => user.email === normalizedEmail)
+        return exists
+          ? prev.map(user => user.email === normalizedEmail ? { ...user, enabled } : user)
+          : [...prev, { email: normalizedEmail, enabled }]
+      })
+      setScottAdminEmail('')
+      if (session?.user.email?.toLowerCase() === normalizedEmail) await refreshScottAccess()
+    } catch (error: unknown) {
+      setScottAdminError(error instanceof Error ? error.message : 'Could not update access')
+    } finally {
+      setScottAdminBusy('')
     }
   }
 
@@ -1233,6 +1287,50 @@ export default function App() {
                   >
                     <span className={`absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${scottEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
                   </button>
+                </div>
+              </div>
+            )}
+            {scottAdminVisible && (
+              <div className="mt-4 border border-[#242a33] bg-[#14171c] rounded-xl p-4">
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-[#e8eaed]">Scott access</p>
+                  <p className="mt-1 text-xs text-[#9aa4b2]">Choose who can use self-correction.</p>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={scottAdminEmail}
+                    onChange={e => setScottAdminEmail(e.target.value)}
+                    placeholder="user@email.com"
+                    className="min-w-0 flex-1 bg-[#0b0d10] border border-[#242a33] rounded-lg px-3 py-2 text-xs text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateScottAccess(scottAdminEmail, true)}
+                    disabled={!scottAdminEmail.trim() || Boolean(scottAdminBusy)}
+                    className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-3 py-2 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
+                  >
+                    Enable
+                  </button>
+                </div>
+                {scottAdminError && <p className="mt-2 text-xs text-red-400">{scottAdminError}</p>}
+                <div className="mt-4 divide-y divide-[#242a33] border-t border-[#242a33]">
+                  {scottAdminUsers.map(user => (
+                    <div key={user.email} className="flex items-center justify-between gap-3 py-3">
+                      <span className="min-w-0 truncate text-xs text-[#e8eaed]">{user.email}</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={user.enabled}
+                        aria-label={`${user.enabled ? 'Disable' : 'Enable'} Scott for ${user.email}`}
+                        onClick={() => updateScottAccess(user.email, !user.enabled)}
+                        disabled={Boolean(scottAdminBusy)}
+                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-40 ${user.enabled ? 'bg-[#ff4500]' : 'bg-[#30353e]'}`}
+                      >
+                        <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${user.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

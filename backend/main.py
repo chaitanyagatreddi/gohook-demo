@@ -40,6 +40,11 @@ SCOTT_ACCESS_REDDIT_USERNAMES = {
     for username in os.getenv("SCOTT_ACCESS_REDDIT_USERNAMES", "").split(",")
     if username.strip()
 }
+SCOTT_ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("SCOTT_ADMIN_EMAILS", "").split(",")
+    if email.strip()
+}
 
 ONBOARDING_EMAIL_HTML = """
 <p>Hey {name} \U0001F44B,</p>
@@ -113,6 +118,11 @@ async def has_scott_access(identity: Optional[dict]) -> bool:
         logger.info("Scott access denied: no authenticated identity")
         return False
     email = str((identity or {}).get("email", "")).strip().lower()
+    app_metadata = (identity or {}).get("app_metadata") or {}
+    if "scott_access" in app_metadata:
+        granted = app_metadata.get("scott_access") is True
+        logger.info("Scott access checked through account override: granted=%s", granted)
+        return granted
     if email and email in SCOTT_ACCESS_EMAILS:
         logger.info("Scott access granted through approved email")
         return True
@@ -123,6 +133,52 @@ async def has_scott_access(identity: Optional[dict]) -> bool:
     granted = bool(username and username in SCOTT_ACCESS_REDDIT_USERNAMES)
     logger.info("Scott access checked through linked Reddit account: granted=%s", granted)
     return granted
+
+
+def require_scott_admin(identity: Optional[dict]) -> dict:
+    email = str((identity or {}).get("email", "")).strip().lower()
+    if not identity or email not in SCOTT_ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="Owner access is required.")
+    return identity
+
+
+async def list_supabase_users() -> List[dict]:
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
+            params={"page": 1, "per_page": 1000},
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            },
+            timeout=15,
+        )
+    if res.status_code >= 400:
+        logger.error("Could not list Supabase users: %s", res.status_code)
+        raise HTTPException(status_code=502, detail="Could not load users.")
+    payload = res.json()
+    if isinstance(payload, list):
+        return payload
+    return payload.get("users", []) if isinstance(payload, dict) else []
+
+
+async def set_scott_user_access(user: dict, enabled: bool) -> None:
+    app_metadata = dict(user.get("app_metadata") or {})
+    app_metadata["scott_access"] = enabled
+    async with httpx.AsyncClient() as client:
+        res = await client.put(
+            f"{SUPABASE_URL}/auth/v1/admin/users/{user['id']}",
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                "Content-Type": "application/json",
+            },
+            json={"app_metadata": app_metadata},
+            timeout=15,
+        )
+    if res.status_code >= 400:
+        logger.error("Could not update Scott access: %s", res.status_code)
+        raise HTTPException(status_code=502, detail="Could not update access.")
 
 
 async def require_user(authorization: Optional[str] = Header(None)):
@@ -177,6 +233,11 @@ class SearchRequest(BaseModel):
     expand: bool = False  # run extra Serper queries for broader coverage
 
 
+class ScottAccessUpdate(BaseModel):
+    email: str
+    enabled: bool
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -185,6 +246,43 @@ def health():
 @app.get("/scott-access")
 async def scott_access(identity: Optional[dict] = Depends(get_current_identity)):
     return {"enabled": await has_scott_access(identity)}
+
+
+@app.get("/scott-admin/users")
+async def scott_admin_users(identity: Optional[dict] = Depends(get_current_identity)):
+    require_scott_admin(identity)
+    users = await list_supabase_users()
+    return {
+        "users": [
+            {
+                "email": str(user.get("email", "")).strip().lower(),
+                "enabled": (
+                    user.get("app_metadata", {}).get("scott_access") is True
+                    if "scott_access" in (user.get("app_metadata") or {})
+                    else str(user.get("email", "")).strip().lower() in SCOTT_ACCESS_EMAILS
+                ),
+            }
+            for user in users
+            if user.get("email")
+        ]
+    }
+
+
+@app.put("/scott-admin/access")
+async def scott_admin_access(
+    req: ScottAccessUpdate,
+    identity: Optional[dict] = Depends(get_current_identity),
+):
+    require_scott_admin(identity)
+    email = req.email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    users = await list_supabase_users()
+    user = next((candidate for candidate in users if str(candidate.get("email", "")).strip().lower() == email), None)
+    if not user:
+        raise HTTPException(status_code=404, detail="This user must sign in once before access can be changed.")
+    await set_scott_user_access(user, req.enabled)
+    return {"email": email, "enabled": req.enabled}
 
 
 @app.post("/reddit/connect")
