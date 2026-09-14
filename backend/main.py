@@ -614,6 +614,10 @@ class QuestionFollowUpRequest(BaseModel):
     failed_checks: Optional[List[str]] = None
 
 
+class QuestionMemoryRequest(BaseModel):
+    question: str
+
+
 @app.get("/question-history")
 async def question_history(identity: Optional[dict] = Depends(get_current_identity)):
     if not identity:
@@ -623,6 +627,22 @@ async def question_history(identity: Optional[dict] = Depends(get_current_identi
     except Exception:
         logger.exception("Could not load question memory")
         raise HTTPException(status_code=502, detail="Could not load question memory.")
+
+
+@app.post("/question-memory")
+async def save_question_prompt(
+    req: QuestionMemoryRequest,
+    identity: Optional[dict] = Depends(get_current_identity),
+):
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    if identity:
+        try:
+            await save_question_memory(identity["id"], req.question)
+        except Exception:
+            logger.exception("Could not save question prompt")
+            raise HTTPException(status_code=502, detail="Could not save question memory.")
+    return {"saved": bool(identity)}
 
 
 @app.post("/question-batch")

@@ -335,10 +335,30 @@ export default function App() {
       return
     }
     const items = questions.map(question => ({ question, layer: 1 }))
+    await rememberQuestions(items)
     const startIndex = questionBatch.length
     setQuestionProgress(null)
     setQuestionBatch(previous => [...previous, ...items])
     if (items.length === 1) await generateAnswer(startIndex, items[0])
+  }
+
+  async function rememberQuestions(items: QuestionAnswer[]) {
+    if (!session) return
+    try {
+      const headers = await authHeaders()
+      await Promise.all(items.map(item => fetch(`${API}/question-memory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ question: item.question }),
+      })))
+      const savedAt = new Date().toISOString()
+      setQuestionMemory(prev => [
+        ...items.map(item => ({ ...item, saved_at: savedAt })),
+        ...prev.filter(entry => !items.some(item => item.question === entry.question)),
+      ].slice(0, 20))
+    } catch {
+      // The question can still run when question memory is temporarily unavailable.
+    }
   }
 
   async function generateAnswer(index: number, overrideItem?: QuestionAnswer) {
@@ -521,7 +541,14 @@ export default function App() {
       try {
         const response = await fetch(`${API}/question-history`, { headers })
         const data = response.ok ? await response.json() : { questions: [] }
-        setQuestionMemory(data.questions ?? [])
+        const saved = data.questions ?? []
+        setQuestionMemory(saved)
+        setQuestionBatch(current => current.length > 0 ? current : saved.map((item: QuestionMemory) => ({
+          question: item.question,
+          answer: item.answer,
+          sources: item.sources ?? [],
+          layer: 1,
+        })))
       } catch {
         setQuestionMemory([])
       }
@@ -1143,14 +1170,14 @@ export default function App() {
         {view === 'questions' && (
           <div className={`max-w-7xl mx-auto grid gap-6 items-start ${scottActive ? 'lg:grid-cols-[minmax(0,1fr)_380px]' : 'grid-cols-1'}`}>
             <div className="min-w-0">
-            <div className="border-b border-[#242a33] pb-6 flex items-start justify-between gap-4">
+            <div className="border-b border-[#242a33] pb-6">
               <div>
                 <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
                 <p className="text-sm text-[#9aa4b2] mt-2">Enter 1 to 3 questions, one per line. Generate each answer individually.</p>
               </div>
               <button
                 onClick={() => setQuestionMemoryOpen(open => !open)}
-                className="shrink-0 bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+                className="mt-4 w-full sm:w-auto bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
               >
                 {questionMemoryOpen ? 'Close memory' : `Question memory${questionMemory.length ? ` · ${questionMemory.length}` : ''}`}
               </button>
@@ -1225,7 +1252,7 @@ export default function App() {
                       pickedQuestions.has(index) ? 'border-[#ff4500] bg-[#181b21] shadow-[0_0_0_1px_rgba(255,69,0,0.12)]' : 'border-[#242a33] bg-[#14171c] hover:border-[#343b47]'
                     }`}
                   >
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 min-w-0">
                       <input
                         type="checkbox"
                         checked={pickedQuestions.has(index)}
@@ -1234,8 +1261,8 @@ export default function App() {
                         title="Pick this one"
                       />
                       <span className="text-xs text-[#ff6a33] font-mono pt-1">L{item.layer ?? 1}</span>
-                      <div>
-                        <h3 className="text-base font-semibold text-[#e8eaed]">{item.question}</h3>
+                      <div className="min-w-0">
+                        <h3 className="text-base font-semibold text-[#e8eaed] break-words">{item.question}</h3>
                         {item.answer ? (
                           <>
                             <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">

@@ -214,18 +214,18 @@ async def link_user_to_threads(user_id: str, node_ids: list[str], edge_type: str
         res.raise_for_status()
 
 
-async def save_question_memory(user_id: str, question: str, answer: dict) -> None:
-    """Keep a person's completed question and answer in their private graph layer."""
+async def save_question_memory(user_id: str, question: str, answer: Optional[dict] = None) -> None:
+    """Keep a person's question and completed answer in their private graph layer."""
     if not user_id or not question.strip():
         return
     memory = {
-        "answer": str(answer.get("answer", "")).strip(),
-        "sources": answer.get("sources", [])[:6],
+        "answer": str((answer or {}).get("answer", "")).strip(),
+        "sources": (answer or {}).get("sources", [])[:6],
     }
     async with httpx.AsyncClient() as client:
         res = await client.post(
             f"{SUPABASE_URL}/rest/v1/user_nodes",
-            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers={**_headers(), "Prefer": f"resolution={'merge-duplicates' if answer is not None else 'ignore-duplicates'},return=minimal"},
             params={"on_conflict": "user_id,type,label"},
             json=[{
                 "user_id": user_id,
