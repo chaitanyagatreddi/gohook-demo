@@ -693,20 +693,35 @@ def _question_confidence(score: int) -> str:
 
 
 def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
+    simple = validation.get("mode") == "simple"
+    source_passed = (
+        validation["verified"] >= 1
+        and validation.get("top_relevance", 0) >= 80
+        if simple
+        else validation["score"] >= 60 and validation["verified"] >= 3
+    )
     return [
         {
             "label": "Source relevance",
-            "passed": validation["score"] >= 60 and validation["verified"] >= 3,
-            "detail": f"Evidence score {validation['score']}/100 from {validation['verified']} relevant threads",
+            "passed": source_passed,
+            "detail": (
+                f"One direct source cleared the simple-question bar ({validation.get('top_relevance', 0)}/100 relevance)"
+                if simple
+                else f"Evidence score {validation['score']}/100 from {validation['verified']} relevant threads"
+            ),
         },
         {
             "label": "Community diversity",
-            "passed": validation["communities"] >= 2,
-            "detail": f"Evidence comes from {validation['communities']} communities",
+            "passed": simple or validation["communities"] >= 2,
+            "detail": (
+                "One community is acceptable for this simple explanatory question"
+                if simple
+                else f"Evidence comes from {validation['communities']} communities"
+            ),
         },
         {
             "label": "Question coverage",
-            "passed": validation["coverage"] >= 70,
+            "passed": validation["coverage"] >= (60 if simple else 70),
             "detail": f"Sources cover {validation['coverage']}% of the question",
         },
         {
@@ -775,6 +790,8 @@ async def question_answer_stream(
                 "coverage": evidence["coverage"],
                 "retried": retried,
                 "passed": evidence["passed"],
+                "mode": evidence["mode"],
+                "top_relevance": evidence["top_relevance"],
             }
             if scott_visible:
                 yield _question_event({
@@ -787,7 +804,11 @@ async def question_answer_stream(
                     "type": "stage",
                     "stage": "validate",
                     "status": "passed" if validation["passed"] else "review",
-                    "detail": f"Evidence score {validation['score']}/100" + (" · passed" if validation["passed"] else " · needs review"),
+                    "detail": (
+                        f"Limited evidence score {validation['score']}/100"
+                        if validation["mode"] == "simple"
+                        else f"Evidence score {validation['score']}/100"
+                    ) + (" · passed" if validation["passed"] else " · needs review"),
                 })
 
             if scott_visible:

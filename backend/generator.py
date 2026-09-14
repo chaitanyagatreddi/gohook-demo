@@ -213,10 +213,23 @@ Rules:
 """
 
 
+def question_evidence_mode(question: str) -> str:
+    """Use a lighter evidence bar only for straightforward explanatory questions."""
+    text = question.strip().lower()
+    strict_signals = (
+        "best", "top ", "recommend", "recommendation", "should i", "which ",
+        " versus ", " vs ", "compare", "comparison", "rank", "ranking", "invest",
+        "buy", "choose", "worth", "cure", "diagnos", "treatment", "legal", "financial",
+    )
+    if any(signal in text for signal in strict_signals):
+        return "strict"
+    return "simple" if re.match(r"^(what|who|when|where|why|how|does|is|can)\b", text) else "strict"
+
+
 def evaluate_question_sources(question: str, results: List[dict]) -> dict:
     """Score source relevance and return only evidence that is on topic."""
     if not results:
-        return {"relevant": [], "score": 0, "coverage": 0, "communities": 0, "passed": False}
+        return {"relevant": [], "score": 0, "coverage": 0, "communities": 0, "passed": False, "mode": question_evidence_mode(question), "top_relevance": 0}
     listed = "\n\n".join(
         f"[S{i}] {result.get('title', '')}\n{result.get('snippet', '')}"
         for i, result in enumerate(results, 1)
@@ -245,19 +258,28 @@ def evaluate_question_sources(question: str, results: List[dict]) -> dict:
     relevant = sorted((item for item in scored if item["relevance"] >= 60), key=lambda item: item["relevance"], reverse=True)
     top_scores = [item["relevance"] for item in relevant[:3]]
     relevance_score = round(sum(top_scores) / 3) if top_scores else 0
+    top_relevance = top_scores[0] if top_scores else 0
     try:
         coverage = max(0, min(100, int(payload.get("coverage", 0))))
     except (TypeError, ValueError):
         coverage = 0
     communities = len({item.get("subreddit_name_prefixed", "") for item in relevant if item.get("subreddit_name_prefixed")})
     diversity_factor = min(1, communities / 2)
-    evidence_score = round(relevance_score * diversity_factor * (coverage / 100))
+    mode = question_evidence_mode(question)
+    if mode == "simple":
+        evidence_score = round(top_relevance * (coverage / 100))
+        passed = bool(relevant) and top_relevance >= 80 and coverage >= 60
+    else:
+        evidence_score = round(relevance_score * diversity_factor * (coverage / 100))
+        passed = len(relevant) >= 3 and communities >= 2 and evidence_score >= 60
     return {
         "relevant": relevant,
         "score": evidence_score,
         "coverage": coverage,
         "communities": communities,
-        "passed": len(relevant) >= 3 and communities >= 2 and evidence_score >= 60,
+        "passed": passed,
+        "mode": mode,
+        "top_relevance": top_relevance,
     }
 
 def validate_question_answer(answer: str, claims: object, source_count: int) -> dict:

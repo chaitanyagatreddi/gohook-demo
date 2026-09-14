@@ -111,7 +111,7 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 
 type Draft = { draft: string; word_count: number; tone: string }
 type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
-type QuestionValidation = { checked: number; verified: number; communities: number; score: number; coverage: number; retried: boolean; passed: boolean }
+type QuestionValidation = { checked: number; verified: number; communities: number; score: number; coverage: number; retried: boolean; passed: boolean; mode?: 'simple' | 'strict'; top_relevance?: number }
 type QuestionClaim = { text: string; sources: number[] }
 type QuestionCheck = { label: string; passed: boolean; detail: string }
 type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[] }
@@ -1190,10 +1190,10 @@ export default function App() {
                             </p>
                             {scottActive && item.validation && (
                               <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${item.validation.passed ? 'border-[#50c878]/30 bg-[#50c878]/10 text-[#50c878]' : 'border-amber-300/30 bg-amber-300/10 text-amber-300'}`}>
-                                  Evidence score {item.validation.score}/100
+                                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${item.validation.mode === 'simple' ? 'border-sky-300/30 bg-sky-300/10 text-sky-300' : item.validation.passed ? 'border-[#50c878]/30 bg-[#50c878]/10 text-[#50c878]' : 'border-amber-300/30 bg-amber-300/10 text-amber-300'}`}>
+                                  {item.validation.mode === 'simple' ? 'Limited evidence' : 'Evidence score'} {item.validation.score}/100
                                 </span>
-                                <span className="text-xs text-[#9aa4b2]">{item.validation.verified} relevant threads · {item.validation.communities} communities{item.validation.retried ? ' · refined once' : ''}</span>
+                                <span className="text-xs text-[#9aa4b2]">{item.validation.verified} relevant threads · {item.validation.communities} communities{item.validation.mode === 'simple' ? ' · direct answer path' : ''}{item.validation.retried ? ' · refined once' : ''}</span>
                                 {item.scoreDelta !== undefined && (
                                   <span className={`text-xs font-semibold ${item.scoreDelta > 0 ? 'text-[#50c878]' : 'text-amber-300'}`}>
                                     {item.scoreDelta > 0 ? '+' : ''}{item.scoreDelta} from previous layer
