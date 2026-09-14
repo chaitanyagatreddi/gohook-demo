@@ -181,6 +181,21 @@ async def set_scott_user_access(user: dict, enabled: bool) -> None:
         raise HTTPException(status_code=502, detail="Could not update access.")
 
 
+async def delete_supabase_user(user: dict) -> None:
+    async with httpx.AsyncClient() as client:
+        res = await client.delete(
+            f"{SUPABASE_URL}/auth/v1/admin/users/{user['id']}",
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            },
+            timeout=15,
+        )
+    if res.status_code >= 400:
+        logger.error("Could not delete Supabase user: %s", res.status_code)
+        raise HTTPException(status_code=502, detail="Could not delete account.")
+
+
 async def invite_scott_user(email: str) -> None:
     async with httpx.AsyncClient() as client:
         res = await client.post(
@@ -334,6 +349,24 @@ async def scott_admin_invite(
 
     await invite_scott_user(email)
     return {"email": email, "enabled": True, "invited": True}
+
+
+@app.delete("/scott-admin/users/{email:path}")
+async def scott_admin_delete_user(
+    email: str,
+    identity: Optional[dict] = Depends(get_current_identity),
+):
+    require_scott_admin(identity)
+    normalized_email = email.strip().lower()
+    users = await list_supabase_users()
+    user = next(
+        (candidate for candidate in users if str(candidate.get("email", "")).strip().lower() == normalized_email),
+        None,
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="This user does not have an account.")
+    await delete_supabase_user(user)
+    return {"email": normalized_email, "deleted": True}
 
 
 @app.post("/reddit/connect")

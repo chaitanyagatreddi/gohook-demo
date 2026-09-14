@@ -599,6 +599,29 @@ export default function App() {
     }
   }
 
+  async function deleteScottUser(email: string) {
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail || !window.confirm(`Delete the GoHook account for ${normalizedEmail}?`)) return
+    setScottAdminBusy(normalizedEmail)
+    setScottAdminError('')
+    setScottAdminNotice('')
+    try {
+      const headers = await authHeaders()
+      const response = await fetch(`${API}/scott-admin/users/${encodeURIComponent(normalizedEmail)}`, {
+        method: 'DELETE',
+        headers,
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not delete account')
+      setScottAdminUsers(prev => prev.filter(user => user.email !== normalizedEmail))
+      setScottAdminNotice(`Account deleted for ${normalizedEmail}`)
+    } catch (error: unknown) {
+      setScottAdminError(error instanceof Error ? error.message : 'Could not delete account')
+    } finally {
+      setScottAdminBusy('')
+    }
+  }
+
   function toggleScott() {
     const enabled = !scottEnabled
     setScottEnabled(enabled)
@@ -626,6 +649,12 @@ export default function App() {
       options: { redirectTo: window.location.origin },
     })
     if (error) setAuthError(error.message)
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut()
+    setShowAuthGate(true)
+    setView('results')
   }
 
   async function connectZernio() {
@@ -986,6 +1015,23 @@ export default function App() {
               </button>
             ))}
           </nav>
+          {session && (
+            <div className="px-2 pb-3 md:px-3">
+              <button
+                type="button"
+                onClick={signOut}
+                title="Log out"
+                className="flex w-full items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#858b95] transition-colors hover:bg-[#191b1f] hover:text-[#e8eaed] md:justify-start"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-[17px] w-[17px] flex-none">
+                  <path d="M10 17l5-5-5-5" />
+                  <path d="M15 12H3" />
+                  <path d="M21 19V5a2 2 0 0 0-2-2h-6" />
+                </svg>
+                <span className="hidden md:inline">Log out</span>
+              </button>
+            </div>
+          )}
         </aside>
       )}
 
@@ -1383,19 +1429,30 @@ export default function App() {
                   {scottAdminUsers.map(user => (
                     <div key={user.email} className="flex items-center justify-between gap-3 py-3">
                       <span className="min-w-0 truncate text-xs text-[#e8eaed]">{user.email}</span>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={user.enabled}
-                        aria-label={`${user.enabled ? 'Disable' : 'Enable'} Scott for ${user.email}`}
-                        onClick={() => updateScottAccess(user.email, !user.enabled)}
-                        disabled={Boolean(scottAdminBusy)}
-                        className={`relative h-8 w-14 shrink-0 overflow-hidden rounded-full border transition-all duration-300 disabled:opacity-40 ${user.enabled ? 'border-[#ff6a33] bg-[#ff4500] shadow-[inset_0_1px_4px_rgba(255,255,255,0.32),0_0_18px_rgba(255,69,0,0.24)]' : 'border-[#3a414c] bg-[#242a33] shadow-inner'}`}
-                      >
-                        <span className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-transform duration-300 ease-out ${user.enabled ? 'translate-x-6' : 'translate-x-0'}`}>
-                          <span className={`h-2 w-2 rounded-full transition-colors ${user.enabled ? 'bg-[#ff4500]' : 'bg-[#9aa4b2]'}`} />
-                        </span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={user.enabled}
+                          aria-label={`${user.enabled ? 'Disable' : 'Enable'} Scott for ${user.email}`}
+                          onClick={() => updateScottAccess(user.email, !user.enabled)}
+                          disabled={Boolean(scottAdminBusy)}
+                          className={`relative h-8 w-14 shrink-0 overflow-hidden rounded-full border transition-all duration-300 disabled:opacity-40 ${user.enabled ? 'border-[#ff6a33] bg-[#ff4500] shadow-[inset_0_1px_4px_rgba(255,255,255,0.32),0_0_18px_rgba(255,69,0,0.24)]' : 'border-[#3a414c] bg-[#242a33] shadow-inner'}`}
+                        >
+                          <span className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-transform duration-300 ease-out ${user.enabled ? 'translate-x-6' : 'translate-x-0'}`}>
+                            <span className={`h-2 w-2 rounded-full transition-colors ${user.enabled ? 'bg-[#ff4500]' : 'bg-[#9aa4b2]'}`} />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${user.email}`}
+                          onClick={() => deleteScottUser(user.email)}
+                          disabled={Boolean(scottAdminBusy)}
+                          className="rounded-md border border-red-400/35 px-2 py-1 text-[11px] font-medium text-red-300 transition-colors hover:bg-red-400/10 disabled:opacity-40"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
