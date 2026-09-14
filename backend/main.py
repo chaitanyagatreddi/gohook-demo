@@ -977,8 +977,20 @@ async def fetch_reddit_post(url: str) -> str:
             listing = response.json()
         post = listing[0]["data"]["children"][0]["data"]
     except Exception:
-        logger.exception("Reddit post fetch failed")
-        raise HTTPException(status_code=502, detail="Could not fetch that Reddit post. Check the URL and try again.")
+        logger.warning("Direct Reddit fetch failed; trying indexed Reddit result", exc_info=True)
+        try:
+            indexed = await search_web(url, limit=1, reddit_only=True)
+            if not indexed:
+                raise ValueError("No indexed result")
+            result = indexed[0]
+            title = (result.get("title") or "").strip()
+            snippet = (result.get("snippet") or "").strip()
+            if not title and not snippet:
+                raise ValueError("Indexed result had no readable text")
+            return f"{title}\n\n{snippet}".strip()
+        except Exception:
+            logger.exception("Reddit post fetch fallback failed")
+            raise HTTPException(status_code=502, detail="Could not fetch that Reddit post. Check the URL and try again.")
 
     title = (post.get("title") or "").strip()
     body = (post.get("selftext") or "").strip()
