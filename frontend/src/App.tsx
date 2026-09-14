@@ -1211,7 +1211,7 @@ export default function App() {
                 <button
                   onClick={createQuestionBatch}
                   disabled={!questionBrief.trim()}
-                  className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-colors"
+                  className="w-full sm:w-auto min-h-12 bg-[#ff4500] hover:bg-[#ff6a33] text-white px-6 py-3 rounded-xl text-sm font-semibold shadow-[0_8px_20px_rgba(255,69,0,0.22)] disabled:opacity-40 transition-colors"
                 >
                     {questionBrief.split('\n').map(question => question.trim()).filter(Boolean).length === 1 ? 'Start question' : 'Create question batch'}
                 </button>
