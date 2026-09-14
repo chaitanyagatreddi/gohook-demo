@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
 from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
-from graph import ingest_threads, link_user_to_threads, read_graph
+from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -614,6 +614,17 @@ class QuestionFollowUpRequest(BaseModel):
     failed_checks: Optional[List[str]] = None
 
 
+@app.get("/question-history")
+async def question_history(identity: Optional[dict] = Depends(get_current_identity)):
+    if not identity:
+        return {"questions": []}
+    try:
+        return {"questions": await read_question_memory(identity["id"])}
+    except Exception:
+        logger.exception("Could not load question memory")
+        raise HTTPException(status_code=502, detail="Could not load question memory.")
+
+
 @app.post("/question-batch")
 def question_batch(req: QuestionBatchRequest):
     if not req.brief.strip():
@@ -659,6 +670,11 @@ async def question_answer(
             attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
         answer["validation"] = validation
         answer["run"] = {"passed": validation["passed"] and answer_review["passed"], "claims": answer_review["claims"], "attempts": attempts}
+        if identity:
+            try:
+                await save_question_memory(identity["id"], req.question, answer)
+            except Exception:
+                logger.exception("Could not save question memory")
         return answer if await has_scott_access(identity) else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
     except Exception:
         logger.exception("Question answer generation failed")
@@ -884,6 +900,11 @@ async def question_answer_stream(
                 "attempts": attempts,
                 "checks": _question_checks(validation, answer_review),
             }
+            if identity:
+                try:
+                    await save_question_memory(identity["id"], req.question, answer)
+                except Exception:
+                    logger.exception("Could not save question memory")
             visible_answer = answer if scott_visible else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
             yield _question_event({"type": "result", "data": visible_answer})
         except Exception:

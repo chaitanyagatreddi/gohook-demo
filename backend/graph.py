@@ -214,6 +214,60 @@ async def link_user_to_threads(user_id: str, node_ids: list[str], edge_type: str
         res.raise_for_status()
 
 
+async def save_question_memory(user_id: str, question: str, answer: dict) -> None:
+    """Keep a person's completed question and answer in their private graph layer."""
+    if not user_id or not question.strip():
+        return
+    memory = {
+        "answer": str(answer.get("answer", "")).strip(),
+        "sources": answer.get("sources", [])[:6],
+    }
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{SUPABASE_URL}/rest/v1/user_nodes",
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            params={"on_conflict": "user_id,type,label"},
+            json=[{
+                "user_id": user_id,
+                "type": "question",
+                "label": question.strip(),
+                "meta": memory,
+            }],
+            timeout=30,
+        )
+        res.raise_for_status()
+
+
+async def read_question_memory(user_id: Optional[str], limit: int = 20) -> list[dict]:
+    """Return the signed-in person's completed question history, newest first."""
+    if not user_id:
+        return []
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/user_nodes",
+            headers=_headers(),
+            params={
+                "user_id": f"eq.{user_id}",
+                "type": "eq.question",
+                "select": "label,meta,created_at",
+                "order": "created_at.desc",
+                "limit": str(limit),
+            },
+            timeout=30,
+        )
+        res.raise_for_status()
+    memories = []
+    for row in res.json():
+        meta = row.get("meta") or {}
+        memories.append({
+            "question": row.get("label", ""),
+            "answer": meta.get("answer", ""),
+            "sources": meta.get("sources", []),
+            "saved_at": row.get("created_at"),
+        })
+    return memories
+
+
 async def read_graph(user_id: Optional[str], limit: int = 300) -> dict:
     """
     Everything needed to draw the picture: the threads and subreddits this person

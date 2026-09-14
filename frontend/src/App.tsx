@@ -116,6 +116,7 @@ type QuestionClaim = { text: string; sources: number[] }
 type QuestionCheck = { label: string; passed: boolean; detail: string }
 type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[] }
 type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun; layer?: number; parentScore?: number; scoreDelta?: number }
+type QuestionMemory = QuestionAnswer & { saved_at?: string }
 type QuestionStageKey = 'understand' | 'research' | 'filter' | 'validate' | 'refine' | 'answer' | 'correct'
 type QuestionStage = { state: 'idle' | 'active' | 'passed' | 'review'; detail: string }
 type QuestionProgress = { questionIndex: number; running: boolean; steps: Record<QuestionStageKey, QuestionStage> }
@@ -266,6 +267,7 @@ export default function App() {
   // Batch questions state
   const [questionBrief, setQuestionBrief] = useState('')
   const [questionBatch, setQuestionBatch] = useState<QuestionAnswer[]>([])
+  const [questionMemory, setQuestionMemory] = useState<QuestionMemory[]>([])
   const [questionBatchError, setQuestionBatchError] = useState('')
   const [answeringIndex, setAnsweringIndex] = useState<number | null>(null)
   const [answerErrors, setAnswerErrors] = useState<Record<number, string>>({})
@@ -399,6 +401,15 @@ export default function App() {
               run: data.run,
               scoreDelta: entry.parentScore === undefined || !data.validation ? undefined : data.validation.score - entry.parentScore,
             } : entry))
+            if (session) {
+              const memory: QuestionMemory = {
+                question: item.question,
+                answer: data.answer,
+                sources: data.sources ?? [],
+                saved_at: new Date().toISOString(),
+              }
+              setQuestionMemory(prev => [memory, ...prev.filter(entry => entry.question !== memory.question)].slice(0, 20))
+            }
           } else if (event.type === 'error') {
             throw new Error(event.message || 'Answer generation failed')
           }
@@ -498,6 +509,22 @@ export default function App() {
 
   useEffect(() => {
     if (session) setShowAuthGate(false)
+  }, [session])
+
+  useEffect(() => {
+    if (!session) {
+      setQuestionMemory([])
+      return
+    }
+    authHeaders().then(async headers => {
+      try {
+        const response = await fetch(`${API}/question-history`, { headers })
+        const data = response.ok ? await response.json() : { questions: [] }
+        setQuestionMemory(data.questions ?? [])
+      } catch {
+        setQuestionMemory([])
+      }
+    })
   }, [session])
 
   useEffect(() => {
@@ -1119,6 +1146,19 @@ export default function App() {
               <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
               <p className="text-sm text-[#9aa4b2] mt-2">Enter 1 to 3 questions, one per line. Generate each answer individually.</p>
             </div>
+            {questionMemory.length > 0 && (
+              <details className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5">
+                <summary className="cursor-pointer text-sm font-semibold text-[#e8eaed]">Question memory · {questionMemory.length} previous questions</summary>
+                <div className="mt-4 space-y-3">
+                  {questionMemory.map((item, index) => (
+                    <article key={`${item.question}-${item.saved_at ?? index}`} className="rounded-xl border border-[#242a33] bg-[#0d0f13] p-4">
+                      <h3 className="text-sm font-semibold text-[#e8eaed]">{item.question}</h3>
+                      {item.answer && <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
+                    </article>
+                  ))}
+                </div>
+              </details>
+            )}
             <div className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
               <textarea
                 value={questionBrief}
