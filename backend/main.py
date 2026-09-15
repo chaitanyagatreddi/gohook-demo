@@ -1016,7 +1016,7 @@ async def fetch_source_content(url: str) -> str:
                 parallel_response.raise_for_status()
                 parallel_result = (parallel_response.json().get("results") or [])[0]
             parallel_text = clean_preview_text((parallel_result.get("full_content") or "\n\n".join(parallel_result.get("excerpts") or [])).strip())
-            if parallel_text and not re.search(r"Expand user menu|Open settings menu|Skip to main content", parallel_text, re.IGNORECASE):
+            if parallel_text and not re.search(r"Expand user menu|Open settings menu|Skip to main content|is the place to ask and answer", parallel_text, re.IGNORECASE):
                 return parallel_text
 
         indexed = await search_web(url, limit=1, reddit_only=False)
