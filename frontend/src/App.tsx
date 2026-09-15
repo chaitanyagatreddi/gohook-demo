@@ -126,11 +126,12 @@ function cleanSourceUrl(value: string) {
   }
 }
 type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
-type QuestionValidation = { checked: number; verified: number; communities: number; score: number; coverage: number; retried: boolean; passed: boolean; mode?: 'simple' | 'strict'; top_relevance?: number }
+type QuestionBar = { mode: 'simple' | 'strict'; need_threads?: number; need_communities?: number; need_score?: number; need_top_relevance?: number; need_coverage?: number }
+type QuestionValidation = { checked: number; verified: number; communities: number; score: number; coverage: number; retried: boolean; passed: boolean; mode?: 'simple' | 'strict'; top_relevance?: number; bar?: QuestionBar; fail_reasons?: string[] }
 type QuestionClaim = { text: string; sources: number[] }
 type QuestionCheck = { label: string; passed: boolean; detail: string }
-type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[] }
-type QuestionAnswer = { question: string; answer?: string; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun; layer?: number; parentScore?: number; scoreDelta?: number }
+type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[]; claim_fail_reasons?: string[] }
+type QuestionAnswer = { question: string; answer?: string; withheld?: boolean; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun; layer?: number; parentScore?: number; scoreDelta?: number }
 type QuestionMemory = QuestionAnswer & { saved_at?: string }
 type QuestionStageKey = 'understand' | 'research' | 'filter' | 'validate' | 'refine' | 'answer' | 'correct'
 type QuestionStage = { state: 'idle' | 'active' | 'passed' | 'review'; detail: string }
@@ -330,7 +331,7 @@ export default function App() {
         next.push({
           id,
           title: item.question,
-          text: item.answer ?? '',
+          text: item.withheld ? '' : item.answer ?? '',
           source_url: item.sources?.[0]?.url ?? '',
           subreddit: item.sources?.length ? `${item.sources.length} sources` : 'batch question',
           reddit_score: 0,
@@ -433,6 +434,7 @@ export default function App() {
             setQuestionBatch(prev => prev.map((entry, entryIndex) => entryIndex === index ? {
               ...entry,
               answer: data.answer,
+              withheld: data.withheld,
               sources: data.sources ?? [],
               validation: data.validation,
               run: data.run,
@@ -442,6 +444,7 @@ export default function App() {
               const memory: QuestionMemory = {
                 question: item.question,
                 answer: data.answer,
+                withheld: data.withheld,
                 sources: data.sources ?? [],
                 saved_at: new Date().toISOString(),
               }
@@ -562,6 +565,7 @@ export default function App() {
         setQuestionBatch(current => current.length > 0 ? current : saved.map((item: QuestionMemory) => ({
           question: item.question,
           answer: item.answer,
+          withheld: item.withheld,
           sources: item.sources ?? [],
           layer: 1,
         })))
@@ -1062,15 +1066,15 @@ export default function App() {
       number: '02',
       title: 'Search Reddit',
       detail: questionProgress?.steps.research.detail ?? (questionWorkflowItem?.validation
-        ? `${questionWorkflowItem.validation.verified} verified threads across ${questionWorkflowItem.validation.communities} communities`
+        ? `${questionWorkflowItem.validation.verified} relevant threads across ${questionWorkflowItem.validation.communities} communities`
         : 'Waiting for an evidence target'),
-      state: questionProgress?.steps.research.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.passed ? 'passed' : 'review') : 'idle'),
+      state: questionProgress?.steps.research.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.verified > 0 ? 'passed' : 'review') : 'idle'),
     },
     {
       number: '03',
       title: 'Filter threads',
       detail: questionProgress?.steps.filter.detail ?? (questionWorkflowItem?.validation ? `${questionWorkflowItem.validation.checked} candidates checked` : 'Duplicates and invalid links will be removed'),
-      state: questionProgress?.steps.filter.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.verified ? 'passed' : 'review') : 'idle'),
+      state: questionProgress?.steps.filter.state ?? (questionWorkflowItem?.validation ? (questionWorkflowItem.validation.checked > 0 ? 'passed' : 'review') : 'idle'),
     },
     {
       number: '04',
@@ -1099,35 +1103,65 @@ export default function App() {
       state: questionProgress?.steps.correct.state ?? (questionWorkflowItem?.run ? (questionWorkflowItem.run.passed ? 'passed' : 'review') : 'idle'),
     },
   ] as const
-  const questionWeakSteps = questionWorkflowSteps.filter(step => step.state === 'review')
-  const questionPassedSteps = questionWorkflowSteps.filter(step => step.state === 'passed')
   const questionValidation = questionWorkflowItem?.validation
+  const questionRun = questionWorkflowItem?.run
+  const questionWorkflowDisplaySteps = questionWorkflowSteps.map(step => ({
+    ...step,
+    state: step.number === '05' && step.state === 'passed' && /added 0/i.test(step.detail) ? 'review' as const : step.state,
+  }))
+  const questionWeakSteps = questionWorkflowDisplaySteps.filter(step => step.state === 'review')
+  const questionPassedSteps = questionWorkflowDisplaySteps.filter(step => step.state === 'passed')
+  const validationReasons = questionValidation?.fail_reasons ?? []
+  const claimReasons = questionRun?.claim_fail_reasons ?? []
+  const allFailureReasons = [...validationReasons, ...claimReasons]
+
+  const failureLine = (code: string) => {
+    const bar = questionValidation?.bar
+    if (code === 'no_threads') return 'No Reddit evidence found'
+    if (code === 'too_few_threads') return `Only ${questionValidation?.verified ?? 0} relevant ${questionValidation?.verified === 1 ? 'thread' : 'threads'}`
+    if (code === 'too_few_communities') return `All proof from ${questionValidation?.communities ?? 0} ${questionValidation?.communities === 1 ? 'community' : 'communities'}`
+    if (code === 'low_score') return 'Evidence too weak'
+    if (code === 'low_relevance') return 'Closest thread isn’t on point'
+    if (code === 'low_coverage') return 'Threads cover only part of the question'
+    if (code === 'no_claims') return 'No claim could be tied to a thread'
+    if (code === 'invalid_citations') return 'Some citations pointed to the wrong thread'
+    if (code === 'unmapped_citations') return 'Some citations weren’t backed by a claim'
+    if (bar?.mode === 'simple') return 'Evidence did not meet the required relevance and coverage'
+    return 'Evidence did not meet the required bar'
+  }
+
+  const failureWhy = (code: string) => {
+    const bar = questionValidation?.bar
+    if (code === 'no_threads') return 'Reddit doesn’t seem to discuss this yet. Try broader words.'
+    if (code === 'too_few_threads') return `Needs ${bar?.need_threads}+ relevant threads.`
+    if (code === 'too_few_communities') return `Needs ${bar?.need_communities}+ communities so one subreddit isn’t the whole answer.`
+    if (code === 'low_score') return `Score ${questionValidation?.score} of ${bar?.need_score}. Relevance ${questionValidation?.top_relevance}, coverage ${questionValidation?.coverage}%.`
+    if (code === 'low_relevance') return `Best relevance ${questionValidation?.top_relevance} of ${bar?.need_top_relevance}.`
+    if (code === 'low_coverage') return `Coverage ${questionValidation?.coverage}% of ${bar?.need_coverage}%.`
+    if (code === 'no_claims') return 'We only show claims backed by a source.'
+    if (code === 'invalid_citations') return 'Fixed or removed before showing.'
+    if (code === 'unmapped_citations') return 'Fixed or removed before showing.'
+    return 'This check did not meet the bar returned by the evidence review.'
+  }
+
+  const stepFailureCode = (number: string) => {
+    if ((number === '02' || number === '03') && validationReasons.includes('no_threads')) return 'no_threads'
+    if (number === '04') return validationReasons[0]
+    if (number === '05' && /added 0/i.test(questionWorkflowDisplaySteps.find(step => step.number === '05')?.detail ?? '')) return 'no_threads'
+    if (number === '06') return claimReasons[0] ?? (questionRun?.claims.length === 0 ? 'no_claims' : '')
+    return ''
+  }
 
   const reviewReason = (number: string) => {
-    if (!questionValidation) return 'This check did not meet its evidence bar.'
-    if (number === '02') return questionValidation.verified === 0
-      ? 'No verified Reddit threads were found.'
-      : `Only ${questionValidation.verified} verified ${questionValidation.verified === 1 ? 'thread' : 'threads'} found. Need 3+ to trust an answer.`
-    if (number === '03') return questionValidation.verified === 0
-      ? 'No valid Reddit threads remained after filtering.'
-      : `${questionValidation.verified} verified ${questionValidation.verified === 1 ? 'thread remains' : 'threads remain'} after filtering.`
-    if (number === '04') return `${questionValidation.verified} of 3 threads · score ${questionValidation.score} of 60.`
-    if (number === '06') return questionWorkflowItem?.run?.claims.length
-      ? `${questionWorkflowItem.run.claims.length} claims have source support; more proof is needed.`
-      : 'No thread backs an answer yet, so we won’t guess.'
-    if (number === '07') return questionWorkflowItem?.answer
-      ? 'Answer shown with limited evidence.'
-      : 'Answer held back: not enough Reddit proof.'
-    return 'This check did not meet its evidence bar.'
+    if (number === '07') return questionWorkflowItem?.withheld ? 'Answer held back: not enough Reddit proof.' : questionRun && !questionRun.passed ? 'Answer shown with limited evidence.' : 'No correction needed'
+    const code = stepFailureCode(number)
+    return code ? failureLine(code) : questionWorkflowDisplaySteps.find(step => step.number === number)?.detail ?? ''
   }
 
   const reviewBar = (number: string) => {
-    if (!questionValidation) return 'Run the question again after evidence is available.'
-    if (number === '02' || number === '03') return `Found ${questionValidation.verified}. This passes with at least 3 relevant, verified Reddit threads.`
-    if (number === '04') return `Actual: ${questionValidation.score}/100 with ${questionValidation.verified} verified threads. Required: 60/100 and 3 verified threads.`
-    if (number === '06') return 'This passes when the answer’s factual claims point to verified sources.'
-    if (number === '07') return 'GoHook holds back an answer when the final evidence check does not pass.'
-    return 'More relevant, verified evidence would make this step pass.'
+    if (number === '07') return questionWorkflowItem?.withheld ? 'The answer is held back until there is enough evidence to support it.' : 'The answer is shown with a Limited evidence tag.'
+    const code = stepFailureCode(number)
+    return code ? failureWhy(code) : 'This step did not meet the bar returned by the backend.'
   }
 
   return (
@@ -1305,7 +1339,7 @@ export default function App() {
                     {questionMemory.map((item, index) => (
                       <article key={`${item.question}-${item.saved_at ?? index}`} className="rounded-xl border border-[#242a33] bg-[#0d0f13] p-4">
                         <h3 className="text-sm font-semibold text-[#e8eaed]">{item.question}</h3>
-                        {item.answer && <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
+                        {item.withheld ? <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2]">The answer is held back until there is enough evidence to support it.</p> : item.answer && <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
                       </article>
                     ))}
                   </div>
@@ -1376,11 +1410,10 @@ export default function App() {
                       <span className="text-xs text-[#ff6a33] font-mono pt-1">L{item.layer ?? 1}</span>
                       <div className="min-w-0">
                         <h3 className="text-base font-semibold text-[#e8eaed] break-words">{item.question}</h3>
-                        {item.answer ? (
+                        {item.answer || item.withheld ? (
                           <>
-                            <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">
-                              {renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}
-                            </p>
+                            {item.withheld ? <div className="mt-3 rounded-xl border border-dashed border-[#303640] bg-[#0d0f13] px-4 py-6 text-center text-sm text-[#9aa4b2]">The answer is held back until there is enough evidence to support it.</div> : item.answer && <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
+                            {!item.withheld && item.run && !item.run.passed && <span className="mt-3 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-300">Limited evidence</span>}
                             {scottActive && item.validation && (
                               <div className="mt-3 flex flex-wrap items-center gap-2">
                                 <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${item.validation.mode === 'simple' ? 'border-sky-300/30 bg-sky-300/10 text-sky-300' : item.validation.passed ? 'border-[#50c878]/30 bg-[#50c878]/10 text-[#50c878]' : 'border-amber-300/30 bg-amber-300/10 text-amber-300'}`}>
@@ -1477,27 +1510,23 @@ export default function App() {
                 </div>
                 <span className={`w-2.5 h-2.5 rounded-full ${questionProgress?.running ? 'bg-[#ff4500] animate-pulse' : questionWorkflowItem?.run?.passed ? 'bg-[#50c878]' : 'bg-[#5c6470]'}`} />
               </div>
-              {!questionProgress?.running && questionWeakSteps.length > 0 && questionValidation && (
+              {!questionProgress?.running && questionWeakSteps.length > 0 && allFailureReasons.length > 0 && (
                 <div className="mt-5 flex gap-3 rounded-xl border border-amber-300/30 bg-amber-300/5 p-4">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-300/40 bg-amber-300/10 text-sm font-bold text-amber-300">!</span>
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-300">Honest result</p>
-                    <p className="mt-1 text-sm font-semibold text-[#e8eaed]">{questionValidation.verified === 0 ? 'No Reddit evidence found' : 'Not enough proof to trust an answer'}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-[#9aa4b2]">{questionValidation.verified === 0 ? 'Reddit does not appear to discuss this question yet.' : `We found ${questionValidation.verified} verified ${questionValidation.verified === 1 ? 'thread' : 'threads'}. We need at least 3 before we trust an answer.`}</p>
+                    <p className="mt-1 text-sm font-semibold text-[#e8eaed]">{failureLine(allFailureReasons[0])}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#9aa4b2]">{allFailureReasons.length > 1 ? allFailureReasons.slice(1, 3).map(failureLine).join(' · ') : failureWhy(allFailureReasons[0])}</p>
                   </div>
                 </div>
               )}
-              {!questionProgress?.running && questionValidation && (
-                <div className="mt-3 rounded-xl border border-[#242a33] bg-[#0d0f13] p-3">
-                  <div className="flex items-end justify-between text-xs text-[#9aa4b2]"><span>Evidence strength</span><strong className="text-sm text-[#e8eaed]">{questionValidation.score} <span className="text-[10px] font-normal text-[#747a84]">of 60 needed</span></strong></div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#252a32]"><div className={`h-full rounded-full ${questionValidation.passed ? 'bg-[#50c878]' : 'bg-amber-300'}`} style={{ width: `${Math.min(100, questionValidation.score / 60 * 100)}%` }} /></div>
-                </div>
-              )}
+              {!questionProgress?.running && questionValidation?.bar?.mode === 'strict' && questionValidation.bar.need_score !== undefined && <div className="mt-3 rounded-xl border border-[#242a33] bg-[#0d0f13] p-3"><div className="flex items-end justify-between text-xs text-[#9aa4b2]"><span>Evidence strength</span><strong className="text-sm text-[#e8eaed]">{questionValidation.score} <span className="text-[10px] font-normal text-[#747a84]">of {questionValidation.bar.need_score}</span></strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#252a32]"><div className={`h-full rounded-full ${questionValidation.passed ? 'bg-[#50c878]' : 'bg-amber-300'}`} style={{ width: `${Math.min(100, questionValidation.score / questionValidation.bar.need_score * 100)}%` }} /></div></div>}
+              {!questionProgress?.running && questionValidation?.bar?.mode === 'simple' && questionValidation.bar.need_top_relevance !== undefined && questionValidation.bar.need_coverage !== undefined && <div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-xl border border-[#242a33] bg-[#0d0f13] p-3"><div className="flex items-end justify-between text-[10px] text-[#9aa4b2]"><span>Relevance</span><strong className="text-xs text-[#e8eaed]">{questionValidation.top_relevance ?? 0} of {questionValidation.bar.need_top_relevance}</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#252a32]"><div className={`h-full rounded-full ${questionValidation.passed ? 'bg-[#50c878]' : 'bg-amber-300'}`} style={{ width: `${Math.min(100, (questionValidation.top_relevance ?? 0) / questionValidation.bar.need_top_relevance * 100)}%` }} /></div></div><div className="rounded-xl border border-[#242a33] bg-[#0d0f13] p-3"><div className="flex items-end justify-between text-[10px] text-[#9aa4b2]"><span>Coverage</span><strong className="text-xs text-[#e8eaed]">{questionValidation.coverage}% of {questionValidation.bar.need_coverage}%</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#252a32]"><div className={`h-full rounded-full ${questionValidation.passed ? 'bg-[#50c878]' : 'bg-amber-300'}`} style={{ width: `${Math.min(100, questionValidation.coverage / questionValidation.bar.need_coverage * 100)}%` }} /></div></div></div>}
               <div className="mt-5 space-y-3">
-                {questionPassedSteps.length > 0 && <div className="flex items-center gap-3 rounded-xl border border-[#50c878]/25 bg-[#50c878]/5 p-3 sm:hidden"><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#50c878]/40 bg-[#50c878]/10 text-xs font-semibold text-[#50c878]">✓</span><div><p className="text-sm font-medium text-[#e8eaed]">{questionPassedSteps.length} checks passed</p><p className="mt-1 text-xs text-[#9aa4b2]">Completed checks are collapsed on mobile</p></div></div>}
-                {questionWorkflowSteps.map((step, index) => (
+                {questionPassedSteps.length > 0 && <div className="flex items-center gap-3 rounded-xl border border-[#50c878]/25 bg-[#50c878]/5 p-3 sm:hidden"><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#50c878]/40 bg-[#50c878]/10 text-xs font-semibold text-[#50c878]">✓</span><div><p className="text-sm font-medium text-[#e8eaed]">{questionPassedSteps.length} {questionPassedSteps.length === 1 ? 'check' : 'checks'} passed</p><p className="mt-1 text-xs text-[#9aa4b2]">Completed checks are collapsed on mobile</p></div></div>}
+                {questionWorkflowDisplaySteps.map((step, index) => (
                   <div key={step.number} className={`relative ${step.state === 'passed' ? 'hidden sm:block' : ''}`}>
-                    {index < questionWorkflowSteps.length - 1 && <div className={`absolute left-[19px] top-full h-3 w-px ${step.state === 'passed' ? 'bg-[#50c878]/45' : 'bg-[#30353e]'}`} />}
+                    {index < questionWorkflowDisplaySteps.length - 1 && <div className={`absolute left-[19px] top-full h-3 w-px ${step.state === 'passed' ? 'bg-[#50c878]/45' : 'bg-[#30353e]'}`} />}
                     <div className={`flex gap-3 rounded-xl border p-3 transition-all duration-300 ${step.state === 'passed' ? 'border-[#50c878]/25 bg-[#50c878]/5' : step.state === 'active' ? 'border-[#ff4500]/45 bg-[#ff4500]/8 shadow-[0_0_24px_rgba(255,69,0,0.1)]' : step.state === 'review' ? 'border-amber-300/30 bg-amber-300/5' : 'border-[#242a33] bg-[#0d0f13]'}`}>
                       <div className={`relative z-10 w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center text-[10px] font-semibold ${step.state === 'passed' ? 'border-[#50c878]/40 bg-[#50c878]/10 text-[#50c878]' : step.state === 'active' ? 'border-[#ff4500]/50 bg-[#ff4500]/10 text-[#ff6a33] animate-pulse' : step.state === 'review' ? 'border-amber-300/40 bg-amber-300/10 text-amber-300' : 'border-[#30353e] bg-[#101114] text-[#747a84]'}`}>
                         {step.state === 'passed' ? '✓' : step.number}
@@ -1514,14 +1543,14 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {!questionProgress?.running && questionWeakSteps.length > 0 && questionWorkflowItem && (
+              {!questionProgress?.running && questionWeakSteps.length > 0 && questionWorkflowItem?.sources?.length ? (
                 <details className="mt-4 group">
                   <summary className="flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg bg-[#ff4500] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#ff6a33]">Show what we found ({questionWorkflowItem.sources?.length ?? 0})</summary>
                   <div className="mt-3 border-t border-[#242a33] pt-3">
-                    {questionWorkflowItem.sources?.length ? <div className="space-y-2">{questionWorkflowItem.sources.map(source => <a key={source.n} href={source.url} target="_blank" rel="noopener noreferrer" className="flex gap-2 rounded-lg border border-[#242a33] bg-[#0d0f13] p-2 text-xs text-[#d5d9df] hover:border-[#ff4500]/40"><span className="text-[#ff6a33]">S{source.n}</span><span className="min-w-0 flex-1">{source.title}</span><span className="text-[#747a84]">↗</span></a>)}</div> : <p className="text-xs text-[#9aa4b2]">No verified threads to show.</p>}
+                    <div className="space-y-2">{questionWorkflowItem.sources.map(source => <a key={source.n} href={source.url} target="_blank" rel="noopener noreferrer" className="flex gap-2 rounded-lg border border-[#242a33] bg-[#0d0f13] p-2 text-xs text-[#d5d9df] hover:border-[#ff4500]/40"><span className="text-[#ff6a33]">S{source.n}</span><span className="min-w-0 flex-1">{source.title}</span><span className="text-[#747a84]">↗</span></a>)}</div>
                   </div>
                 </details>
-              )}
+              ) : null}
             </aside>}
           </div>
         )}

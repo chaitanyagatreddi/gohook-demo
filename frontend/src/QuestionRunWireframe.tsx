@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import VoiceProfile from './VoiceProfile'
 
 type DemoState = 'passed' | 'weak' | 'withheld' | 'zero' | 'running' | 'mobile'
 
@@ -81,7 +80,7 @@ export default function QuestionRunWireframe() {
     <div className="qr-demo-page">
       <header className="qr-demo-header">
         <div><span className="qr-logo">⌘</span><strong>GoHook</strong><span>Question Run · design review</span></div>
-        <div className="qr-header-actions"><VoiceProfile /><a href="?wireframe=ideate">Ideate wireframe ↗</a></div>
+        <a href="?wireframe=ideate">Ideate wireframe ↗</a>
       </header>
 
       <div className="qr-preview-control">
