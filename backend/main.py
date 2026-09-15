@@ -1261,10 +1261,19 @@ async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depen
         raise HTTPException(status_code=400, detail="Please enter a link")
     page_text = await fetch_source_content(req.url, user_id)
     lines = [line.strip() for line in page_text.splitlines() if line.strip()]
-    source_title = clean_preview_text(lines[0])[:160] if lines else ""
+    source_title = clean_preview_text(lines[0]) if lines else ""
+    source_title = re.split(r"\s+(?:Written by:|By:|Published)\s", source_title)[0]
+    if len(source_title) > 110:
+        source_title = source_title[:110].rsplit(" ", 1)[0] + "…"
     topic = f"{source_title} {req.takeaway}".strip() or page_text[:200]
     try:
         subreddits = await find_discussing_subreddits(topic, req.url)
+        if req.takeaway.strip() and len(subreddits) < 3:
+            known = {s["name"].lower() for s in subreddits}
+            for extra in await find_discussing_subreddits(req.takeaway, req.url):
+                if extra["name"].lower() not in known:
+                    subreddits.append(extra)
+            subreddits = subreddits[:5]
     except Exception:
         logger.exception("Subreddit discovery failed")
         subreddits = []

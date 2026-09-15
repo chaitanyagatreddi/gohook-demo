@@ -531,6 +531,9 @@ Return JSON: {"angles": [ ... 3 to 5 items ... ]}. Each item:
 Rules:
 - Use only claims that are in the page. Never invent numbers, names or results.
 - Each angle must be a different conversation, not the same idea reworded.
+- Use at least three different post_type values across the angles.
+- Spread angles across the given subreddits when more than one fits.
+- Do not name the author's company or product in the title.
 - Lead with the reader's problem or a question, not with the author's product.
 - If a subreddit list is empty, suggest well-known relevant subreddits and mark promo_risk honestly."""
 
@@ -540,7 +543,8 @@ IDEATE_DRAFT_SYSTEM_PROMPT = """You write one Reddit post from a chosen idea and
 Return JSON: {"title": "...", "draft": "...", "link_placement": "..."}.
 
 Rules:
-- Casual, human, short paragraphs, 80-200 words. No marketing speak, no emoji, no markdown.
+- Casual, human, 2-4 short paragraphs separated by a blank line, 80-200 words. No marketing speak, no emoji, no markdown.
+- Mention the author's company or product at most once, and only if the post needs it.
 - Open with the hook idea; end with a real question that invites replies.
 - Use only facts from the page. Never invent numbers, names or results.
 - Match the tone of the example thread titles for that subreddit.
@@ -590,6 +594,15 @@ def generate_post_angles(page_text: str, takeaway: str, subreddits: List[dict]) 
     return angles
 
 
+def _link_sentence(text: str, choice: str) -> str:
+    if text and text.lower() not in {"no link", "link in a comment", "link in post"}:
+        return text
+    return {
+        "link in a comment": "Add the link in a comment if someone asks.",
+        "link in post": "One link at the end of the post.",
+    }.get(choice.lower(), "No link in the post.")
+
+
 def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_threads: List[str]) -> dict:
     user = (
         f"Chosen idea:\n{json.dumps(angle, ensure_ascii=False)}\n\n"
@@ -617,5 +630,5 @@ def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_th
         "draft": draft,
         "word_count": len(draft.split()),
         "tone": detect_tone(draft),
-        "link_placement": (data.get("link_placement") or "").strip(),
+        "link_placement": _link_sentence((data.get("link_placement") or "").strip(), str(angle.get("include_link", "no link"))),
     }
