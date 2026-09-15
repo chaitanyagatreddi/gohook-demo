@@ -982,6 +982,12 @@ def clean_preview_text(text: str) -> str:
     return text.strip()
 
 
+def thread_title_key(title: str) -> str:
+    title = re.sub(r"^r/[a-z0-9_]+ on reddit:\s*", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"\s*(?::\s*r/[a-z0-9_]+)?\s*(?:-\s*reddit)?\s*$", "", title, flags=re.IGNORECASE)
+    return re.sub(r"[^a-z0-9]+", "", title.lower())
+
+
 def topic_overlap(topic: str, candidate: str) -> float:
     ignored = {"about", "after", "again", "also", "and", "are", "from", "have", "into", "just", "more", "most", "only", "that", "the", "their", "then", "this", "they", "with", "what", "when", "will", "your"}
     topic_terms = {term for term in re.findall(r"[a-z0-9]{4,}", topic.lower()) if term not in ignored}
@@ -989,6 +995,81 @@ def topic_overlap(topic: str, candidate: str) -> float:
     if not topic_terms:
         return 0.0
     return len(topic_terms & candidate_terms) / len(topic_terms)
+
+
+REDDIT_NAV_LINE = re.compile(
+    r"^(skip to main content|open menu|open navigation|go to reddit home|expand user menu|open settings menu|"
+    r"log in|sign up|get the reddit app|reddit, inc\.?|user agreement|privacy policy|content policy|"
+    r"archived post\. new comments cannot be posted.*|share|reply|award|join|more replies|"
+    r"sort by:?.*|best|top|new|controversial|old|q&a|comments? section|add a comment|"
+    r"r/[a-z0-9_]+ is the place to ask and answer.*|go to [^•]+•.*|\[deleted\]|\[removed\])$",
+    re.IGNORECASE,
+)
+
+
+REDDIT_NAV_PHRASES = re.compile(
+    r"skip to main content|open menu|open navigation|go to reddit home|expand user menu|open settings menu",
+    re.IGNORECASE,
+)
+
+
+def reddit_thread_id(url: str) -> Optional[str]:
+    match = re.search(r"/comments/([a-z0-9]+)", url or "", re.IGNORECASE)
+    return match.group(1).lower() if match else None
+
+
+def reddit_slug_terms(url: str) -> set[str]:
+    match = re.search(r"/comments/[a-z0-9]+/([^/?#]+)", url or "", re.IGNORECASE)
+    if not match:
+        return set()
+    return {term for term in re.split(r"[_\-]+", match.group(1).lower()) if len(term) >= 3}
+
+
+def strip_reddit_chrome(text: str) -> str:
+    """Drop Reddit's page menu/footer lines anywhere in the text, keep the post."""
+    kept = []
+    for raw in (text or "").splitlines():
+        line = re.sub(r"\[\]\([^)]*\)", "", raw)
+        line = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", line)
+        line = REDDIT_NAV_PHRASES.sub(" ", line)
+        line = re.sub(r"^#+\s*", "", re.sub(r"\s+", " ", line)).strip()
+        if not line or REDDIT_NAV_LINE.match(line):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+async def fetch_reddit_post_via_extract(url: str) -> Optional[str]:
+    """Read the post from the real Reddit page and keep it only if it matches the URL."""
+    if not PARALLEL_API_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            response = await client.post(
+                "https://api.parallel.ai/v1/extract",
+                headers={"x-api-key": PARALLEL_API_KEY, "Content-Type": "application/json"},
+                json={
+                    "urls": [url],
+                    "objective": "The original Reddit post only: its title and body text. Not comments, sidebar or navigation.",
+                },
+            )
+            response.raise_for_status()
+            result = (response.json().get("results") or [{}])[0]
+    except Exception:
+        logger.warning("Reddit page extraction failed", exc_info=True)
+        return None
+    text = "\n\n".join(result.get("excerpts") or []) or (result.get("full_content") or "")
+    text = strip_reddit_chrome(text)
+    if not text:
+        return None
+    # Verify it is this post: the URL's slug words must appear in what we read.
+    slug = reddit_slug_terms(url)
+    if slug:
+        found = sum(1 for term in slug if term in text.lower())
+        if found / len(slug) < 0.6:
+            logger.info("Extracted Reddit text did not match the URL slug; not using it")
+            return None
+    return text[:6000]
 
 
 async def fetch_reddit_post_through_connection(url: str, user_id: Optional[str]) -> Optional[str]:
@@ -1037,6 +1118,9 @@ async def fetch_source_content(url: str, user_id: Optional[str] = None) -> str:
         connected_post = await fetch_reddit_post_through_connection(url, user_id)
         if connected_post:
             return connected_post
+        extracted_post = await fetch_reddit_post_via_extract(url)
+        if extracted_post:
+            return extracted_post
         raise HTTPException(
             status_code=422,
             detail="Could not verify the exact Reddit post. Connect Reddit and try again rather than drafting from an unverified preview.",
@@ -1086,15 +1170,19 @@ async def relevant_threads(req: RelevantThreadsRequest):
         results = await search_web(f"{req.topic[:300]} discussion", limit=8, reddit_only=True)
         source = (req.source_url or "").split("?", 1)[0].rstrip("/").lower()
         seen_titles: set[str] = set()
+        seen_ids: set[str] = set()
         threads = []
         for item in results:
             url = item.get("url", "")
             title = clean_preview_text(item.get("title", ""))
-            key = re.sub(r"[^a-z0-9]+", "", title.lower())
+            key = thread_title_key(title)
+            thread_id = reddit_thread_id(url)
             canonical_url = url.split("?", 1)[0].rstrip("/").lower()
-            if not title or not url or "/comments/" not in canonical_url or canonical_url == source or key in seen_titles:
+            if not title or not url or "/comments/" not in canonical_url or canonical_url == source or key in seen_titles or thread_id in seen_ids:
                 continue
             seen_titles.add(key)
+            if thread_id:
+                seen_ids.add(thread_id)
             threads.append({
                 "title": title,
                 "url": url,
@@ -1109,8 +1197,13 @@ async def relevant_threads(req: RelevantThreadsRequest):
                 url = item.get("url", "")
                 title = clean_preview_text(item.get("title", ""))
                 canonical_url = url.split("?", 1)[0].rstrip("/").lower()
-                if not title or not url or "/comments/" not in canonical_url or canonical_url == source:
+                key = thread_title_key(title)
+                thread_id = reddit_thread_id(url)
+                if not title or not url or "/comments/" not in canonical_url or canonical_url == source or key in seen_titles or thread_id in seen_ids:
                     continue
+                seen_titles.add(key)
+                if thread_id:
+                    seen_ids.add(thread_id)
                 threads.append({"title": title, "url": url, "subreddit": item.get("subreddit_name_prefixed", ""), "snippet": clean_preview_text(item.get("snippet", ""))})
                 if len(threads) >= 5:
                     break
