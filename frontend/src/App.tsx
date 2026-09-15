@@ -767,6 +767,7 @@ export default function App() {
   const [fetchingPost, setFetchingPost] = useState(false)
   const [findingThreads, setFindingThreads] = useState(false)
   const [relevantThreads, setRelevantThreads] = useState<{ title: string; url: string; subreddit: string; snippet: string }[]>([])
+  const [threadFallback, setThreadFallback] = useState(false)
 
   // Auto-search from URL param: ?q=Notion
   useEffect(() => {
@@ -987,6 +988,7 @@ export default function App() {
     setPostFetched(false)
     setPostPreview('')
     setRelevantThreads([])
+    setThreadFallback(false)
     setCommentError('')
     try {
       const res = await fetch(`${API}/reddit-post`, {
@@ -1018,6 +1020,7 @@ export default function App() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Could not find relevant threads')
       setRelevantThreads(data.threads || [])
+      setThreadFallback(Boolean(data.fallback))
     } catch (e: unknown) {
       setCommentError(e instanceof Error ? e.message : 'Could not find relevant threads')
     } finally {
@@ -2026,6 +2029,7 @@ export default function App() {
                     setPostFetched(false)
                     setPostPreview('')
                     setRelevantThreads([])
+                    setThreadFallback(false)
                   }}
                   onBlur={() => setPostUrl(cleanSourceUrl(postUrl))}
                   placeholder="https://www.reddit.com/r/... or https://example.com/article"
@@ -2059,6 +2063,7 @@ export default function App() {
                 {relevantThreads.length > 0 && (
                   <div className="mt-3 space-y-2">
                     <p className="text-xs font-medium text-[#9aa4b2]">Relevant discussions</p>
+                    {threadFallback && <p className="text-xs text-amber-300">! Closest matches — verify before replying.</p>}
                     {relevantThreads.map(thread => (
                       <a key={thread.url} href={thread.url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-[#242a33] bg-[#0f1216] px-3 py-2 hover:border-[#ff4500]/50">
                         <p className="text-xs text-[#e8eaed]">{thread.title}</p>

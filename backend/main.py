@@ -1064,8 +1064,22 @@ async def relevant_threads(req: RelevantThreadsRequest):
                 "subreddit": item.get("subreddit_name_prefixed", ""),
                 "snippet": clean_preview_text(item.get("snippet", "")),
             })
+        fallback = False
+        if not threads:
+            fallback = True
+            broader = await search_web(f"{req.topic[:160]} Reddit", limit=8, reddit_only=True)
+            for item in broader:
+                url = item.get("url", "")
+                title = clean_preview_text(item.get("title", ""))
+                canonical_url = url.split("?", 1)[0].rstrip("/").lower()
+                if not title or not url or "/comments/" not in canonical_url or canonical_url == source:
+                    continue
+                threads.append({"title": title, "url": url, "subreddit": item.get("subreddit_name_prefixed", ""), "snippet": clean_preview_text(item.get("snippet", ""))})
+                if len(threads) >= 5:
+                    break
         return {
-            "threads": threads
+            "threads": threads,
+            "fallback": fallback,
         }
     except Exception:
         logger.exception("Relevant Reddit thread search failed")
