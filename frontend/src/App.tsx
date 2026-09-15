@@ -752,6 +752,8 @@ export default function App() {
   const [postFetched, setPostFetched] = useState(false)
   const [postPreview, setPostPreview] = useState('')
   const [fetchingPost, setFetchingPost] = useState(false)
+  const [findingThreads, setFindingThreads] = useState(false)
+  const [relevantThreads, setRelevantThreads] = useState<{ title: string; url: string; subreddit: string; snippet: string }[]>([])
 
   // Auto-search from URL param: ?q=Notion
   useEffect(() => {
@@ -969,6 +971,7 @@ export default function App() {
     setFetchingPost(true)
     setPostFetched(false)
     setPostPreview('')
+    setRelevantThreads([])
     setCommentError('')
     try {
       const res = await fetch(`${API}/reddit-post`, {
@@ -984,6 +987,26 @@ export default function App() {
       setCommentError(e instanceof Error ? e.message : 'Could not fetch that post')
     } finally {
       setFetchingPost(false)
+    }
+  }
+
+  async function findRelevantThreads() {
+    if (!postPreview.trim()) return
+    setFindingThreads(true)
+    setCommentError('')
+    try {
+      const res = await fetch(`${API}/relevant-threads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: postPreview }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Could not find relevant threads')
+      setRelevantThreads(data.threads || [])
+    } catch (e: unknown) {
+      setCommentError(e instanceof Error ? e.message : 'Could not find relevant threads')
+    } finally {
+      setFindingThreads(false)
     }
   }
 
@@ -1987,6 +2010,7 @@ export default function App() {
                     setPostUrl(e.target.value)
                     setPostFetched(false)
                     setPostPreview('')
+                    setRelevantThreads([])
                   }}
                   placeholder="https://www.reddit.com/r/... or https://example.com/article"
                   className="mt-1 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
@@ -2000,11 +2024,31 @@ export default function App() {
                   >
                     {fetchingPost ? 'Fetching…' : postFetched ? 'Post fetched ✓' : 'Fetch post'}
                   </button>
+                  {postFetched && (
+                    <button
+                      onClick={findRelevantThreads}
+                      disabled={findingThreads}
+                      className="border border-[#3a4250] text-[#e8eaed] hover:border-[#ff4500]/60 hover:text-[#ff6a33] px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
+                    >
+                      {findingThreads ? 'Finding threads…' : 'Find relevant threads →'}
+                    </button>
+                  )}
                   {postFetched && <span className="text-xs text-emerald-400">URL verified. Ready to draft.</span>}
                 </div>
                 {postFetched && postPreview && (
                   <div className="mt-2 rounded-lg border border-[#242a33] bg-[#0f1216] px-3 py-2 text-xs text-[#9aa4b2]">
                     {postPreview}{postPreview.length >= 280 ? '…' : ''}
+                  </div>
+                )}
+                {relevantThreads.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-medium text-[#9aa4b2]">Relevant discussions</p>
+                    {relevantThreads.map(thread => (
+                      <a key={thread.url} href={thread.url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-[#242a33] bg-[#0f1216] px-3 py-2 hover:border-[#ff4500]/50">
+                        <p className="text-xs text-[#e8eaed]">{thread.title}</p>
+                        <p className="mt-1 text-[11px] text-[#ff6a33]">{thread.subreddit || 'Reddit'} ↗</p>
+                      </a>
+                    ))}
                   </div>
                 )}
 

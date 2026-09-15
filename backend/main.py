@@ -964,6 +964,10 @@ class RedditPostRequest(BaseModel):
     post_url: str
 
 
+class RelevantThreadsRequest(BaseModel):
+    topic: str
+
+
 async def fetch_source_content(url: str) -> str:
     from urllib.parse import urlparse
 
@@ -1022,6 +1026,29 @@ async def reddit_post(req: RedditPostRequest):
         raise HTTPException(status_code=400, detail="Please enter a valid public URL")
     post = await fetch_source_content(req.post_url)
     return {"post": post, "preview": post[:280]}
+
+
+@app.post("/relevant-threads")
+async def relevant_threads(req: RelevantThreadsRequest):
+    if not req.topic.strip():
+        raise HTTPException(status_code=400, detail="A topic is required")
+    try:
+        results = await search_web(f"{req.topic[:300]} discussion", limit=8, reddit_only=True)
+        return {
+            "threads": [
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "subreddit": item.get("subreddit_name_prefixed", ""),
+                    "snippet": item.get("snippet", ""),
+                }
+                for item in results
+                if item.get("url")
+            ]
+        }
+    except Exception:
+        logger.exception("Relevant Reddit thread search failed")
+        raise HTTPException(status_code=502, detail="Could not find relevant Reddit threads right now.")
 
 
 @app.post("/comment")
