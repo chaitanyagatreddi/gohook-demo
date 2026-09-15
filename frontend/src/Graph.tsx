@@ -49,8 +49,8 @@ function layout(nodes: Placed[], edges: GraphEdge[], width: number, height: numb
   const cy = height / 2
 
   for (const n of nodes) {
-    n.vx *= 0.84
-    n.vy *= 0.84
+    n.vx *= 0.92
+    n.vy *= 0.92
     n.vx += (cx - n.x) * 0.0014
     n.vy += (cy - n.y) * 0.0014
   }
@@ -79,7 +79,7 @@ function layout(nodes: Placed[], edges: GraphEdge[], width: number, height: numb
     const dx = b.x - a.x
     const dy = b.y - a.y
     const d = Math.sqrt(dx * dx + dy * dy) || 0.01
-    const pull = (d - 125) * 0.0065
+    const pull = (d - 125) * 0.003
     const ux = (dx / d) * pull
     const uy = (dy / d) * pull
     a.vx += ux; a.vy += uy
@@ -95,8 +95,8 @@ function layout(nodes: Placed[], edges: GraphEdge[], width: number, height: numb
     if (n.y < margin) n.vy += (margin - n.y) * 0.05
     if (n.y > height - margin) n.vy -= (n.y - (height - margin)) * 0.05
 
-    n.x += Math.max(-5, Math.min(5, n.vx))
-    n.y += Math.max(-5, Math.min(5, n.vy))
+    n.x += Math.max(-1.8, Math.min(1.8, n.vx))
+    n.y += Math.max(-1.8, Math.min(1.8, n.vy))
 
     // Hard stop, so nothing can leave the panel even while being dragged.
     n.x = Math.max(14, Math.min(width - 14, n.x))
