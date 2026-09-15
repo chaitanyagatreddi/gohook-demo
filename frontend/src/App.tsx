@@ -1966,7 +1966,7 @@ export default function App() {
                 </p>
 
                 <label className="block mt-4 text-xs font-medium text-[#9aa4b2]">
-                  Reddit post URL
+                  Post or article URL
                 </label>
                 <textarea
                   value={postUrl}
@@ -1975,7 +1975,7 @@ export default function App() {
                     setPostFetched(false)
                     setPostPreview('')
                   }}
-                  placeholder="https://www.reddit.com/r/.../comments/..."
+                  placeholder="https://www.reddit.com/r/... or https://example.com/article"
                   className="mt-1 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
                 />
 

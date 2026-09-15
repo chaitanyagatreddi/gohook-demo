@@ -960,68 +960,63 @@ class RedditPostRequest(BaseModel):
     post_url: str
 
 
-async def fetch_reddit_post(url: str) -> str:
+async def fetch_source_content(url: str) -> str:
     from urllib.parse import urlparse
 
     parsed = urlparse(url.strip())
     host = (parsed.hostname or "").lower()
-    if host not in {"reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "redd.it", "www.redd.it"}:
-        raise HTTPException(status_code=400, detail="Please enter a Reddit post URL")
-    if not parsed.path or "/comments/" not in parsed.path:
-        raise HTTPException(status_code=400, detail="Please enter a Reddit thread URL")
+    if parsed.scheme not in {"http", "https"} or not host:
+        raise HTTPException(status_code=400, detail="Please enter a valid public URL")
 
-    json_url = f"{parsed.scheme or 'https'}://{parsed.netloc}{parsed.path.rstrip('/')}.json"
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            response = await client.get(
-                json_url,
-                params={"raw_json": "1"},
-                headers={"User-Agent": "GoHook/1.0 (reply draft)"},
-            )
-            response.raise_for_status()
-            listing = response.json()
-        post = listing[0]["data"]["children"][0]["data"]
-    except Exception:
-        logger.warning("Direct Reddit fetch failed; trying indexed Reddit result", exc_info=True)
+    reddit_hosts = {"reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "redd.it", "www.redd.it"}
+    if host in reddit_hosts and parsed.path and "/comments/" in parsed.path:
+        json_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}.json"
         try:
-            if PARALLEL_API_KEY:
-                async with httpx.AsyncClient(timeout=20) as client:
-                    parallel_response = await client.post(
-                        "https://api.parallel.ai/v1/extract",
-                        headers={"x-api-key": PARALLEL_API_KEY, "Content-Type": "application/json"},
-                        json={"urls": [url], "objective": "Extract the Reddit post title and full text."},
-                    )
-                    parallel_response.raise_for_status()
-                    parallel_result = (parallel_response.json().get("results") or [])[0]
-                parallel_text = (parallel_result.get("full_content") or "\n\n".join(parallel_result.get("excerpts") or [])).strip()
-                if parallel_text:
-                    return parallel_text
-
-            indexed = await search_web(url, limit=1, reddit_only=True)
-            if not indexed:
-                raise ValueError("No indexed result")
-            result = indexed[0]
-            title = (result.get("title") or "").strip()
-            snippet = (result.get("snippet") or "").strip()
-            if not title and not snippet:
-                raise ValueError("Indexed result had no readable text")
-            return f"{title}\n\n{snippet}".strip()
+            async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+                response = await client.get(json_url, params={"raw_json": "1"}, headers={"User-Agent": "GoHook/1.0 (reply draft)"})
+                response.raise_for_status()
+                listing = response.json()
+            post = listing[0]["data"]["children"][0]["data"]
+            title = (post.get("title") or "").strip()
+            body = (post.get("selftext") or "").strip()
+            if title or body:
+                return f"{title}\n\n{body}".strip()
         except Exception:
-            logger.exception("Reddit post fetch fallback failed")
-            raise HTTPException(status_code=502, detail="Could not fetch that Reddit post. Check the URL and try again.")
+            logger.warning("Direct Reddit fetch failed; trying content extraction", exc_info=True)
 
-    title = (post.get("title") or "").strip()
-    body = (post.get("selftext") or "").strip()
-    if not title and not body:
-        raise HTTPException(status_code=422, detail="That Reddit post has no readable text")
-    return f"{title}\n\n{body}".strip()
+    try:
+        if PARALLEL_API_KEY:
+            async with httpx.AsyncClient(timeout=20) as client:
+                parallel_response = await client.post(
+                    "https://api.parallel.ai/v1/extract",
+                    headers={"x-api-key": PARALLEL_API_KEY, "Content-Type": "application/json"},
+                    json={"urls": [url], "objective": "Extract the page title and main readable text for drafting a helpful reply."},
+                )
+                parallel_response.raise_for_status()
+                parallel_result = (parallel_response.json().get("results") or [])[0]
+            parallel_text = (parallel_result.get("full_content") or "\n\n".join(parallel_result.get("excerpts") or [])).strip()
+            if parallel_text:
+                return parallel_text
+
+        indexed = await search_web(url, limit=1, reddit_only=False)
+        if not indexed:
+            raise ValueError("No indexed result")
+        result = indexed[0]
+        title = (result.get("title") or "").strip()
+        snippet = (result.get("snippet") or "").strip()
+        if title or snippet:
+            return f"{title}\n\n{snippet}".strip()
+        raise ValueError("No readable text")
+    except Exception:
+        logger.exception("Source content fetch failed")
+        raise HTTPException(status_code=502, detail="Could not fetch that page. Check the URL and try again.")
 
 
 @app.post("/reddit-post")
 async def reddit_post(req: RedditPostRequest):
     if not req.post_url.strip():
-        raise HTTPException(status_code=400, detail="Please enter a Reddit post URL")
-    post = await fetch_reddit_post(req.post_url)
+        raise HTTPException(status_code=400, detail="Please enter a valid public URL")
+    post = await fetch_source_content(req.post_url)
     return {"post": post, "preview": post[:280]}
 
 
@@ -1030,7 +1025,7 @@ async def comment(req: CommentRequest):
     if not req.intent.strip() or (not req.post.strip() and not (req.post_url or "").strip()):
         raise HTTPException(status_code=400, detail="Reddit post URL and intent cannot be empty")
     try:
-        post = await fetch_reddit_post(req.post_url) if req.post_url else req.post
+        post = await fetch_source_content(req.post_url) if req.post_url else req.post
         return await run_in_threadpool(draft_comment, post, req.intent)
     except HTTPException:
         raise
