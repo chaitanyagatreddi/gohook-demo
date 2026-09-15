@@ -972,6 +972,7 @@ class RelevantThreadsRequest(BaseModel):
 def clean_preview_text(text: str) -> str:
     text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
     text = re.sub(r"^\s*#+\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*+", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
