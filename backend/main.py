@@ -1261,7 +1261,9 @@ async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depen
         raise HTTPException(status_code=400, detail="Please enter a link")
     page_text = await fetch_source_content(req.url, user_id)
     lines = [line.strip() for line in page_text.splitlines() if line.strip()]
-    source_title = clean_preview_text(lines[0]) if lines else ""
+    # First line with real words: skips Reddit usernames and flair lines.
+    title_line = next((line for line in lines if len(line.split()) >= 3), lines[0] if lines else "")
+    source_title = clean_preview_text(title_line)
     source_title = re.split(r"\s+(?:Written by:|By:|Published)\s", source_title)[0]
     if len(source_title) > 110:
         source_title = source_title[:110].rsplit(" ", 1)[0] + "…"
