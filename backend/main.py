@@ -970,7 +970,10 @@ class RelevantThreadsRequest(BaseModel):
 
 
 def clean_preview_text(text: str) -> str:
+    text = re.sub(r"^.*?Skip to main content.*?Go to Reddit Home\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\]\([^)]*\)", "", text)
     text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
+    text = re.sub(r"\S+\]\(https?://\S*$", "", text)
     text = re.sub(r"^\s*#+\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"\s+", " ", text)
@@ -1051,7 +1054,7 @@ async def relevant_threads(req: RelevantThreadsRequest):
             title = clean_preview_text(item.get("title", ""))
             key = re.sub(r"[^a-z0-9]+", "", title.lower())
             canonical_url = url.split("?", 1)[0].rstrip("/").lower()
-            if not title or not url or canonical_url == source or key in seen_titles:
+            if not title or not url or "/comments/" not in canonical_url or canonical_url == source or key in seen_titles:
                 continue
             seen_titles.add(key)
             threads.append({
