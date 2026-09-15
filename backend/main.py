@@ -29,6 +29,7 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+PARALLEL_API_KEY = os.getenv("PARALLEL_API_KEY")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 SCOTT_ACCESS_EMAILS = {
     email.strip().lower()
@@ -979,6 +980,19 @@ async def fetch_reddit_post(url: str) -> str:
     except Exception:
         logger.warning("Direct Reddit fetch failed; trying indexed Reddit result", exc_info=True)
         try:
+            if PARALLEL_API_KEY:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    parallel_response = await client.post(
+                        "https://api.parallel.ai/v1/extract",
+                        headers={"x-api-key": PARALLEL_API_KEY, "Content-Type": "application/json"},
+                        json={"urls": [url], "objective": "Extract the Reddit post title and full text."},
+                    )
+                    parallel_response.raise_for_status()
+                    parallel_result = (parallel_response.json().get("results") or [])[0]
+                parallel_text = (parallel_result.get("full_content") or "\n\n".join(parallel_result.get("excerpts") or [])).strip()
+                if parallel_text:
+                    return parallel_text
+
             indexed = await search_web(url, limit=1, reddit_only=True)
             if not indexed:
                 raise ValueError("No indexed result")
