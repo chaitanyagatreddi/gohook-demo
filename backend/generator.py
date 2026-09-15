@@ -264,10 +264,43 @@ def question_evidence_mode(question: str) -> str:
     return "simple" if re.match(r"^(what|who|when|where|why|how|does|is|can)\b", text) else "strict"
 
 
+QUESTION_EVIDENCE_BARS = {
+    "strict": {"mode": "strict", "need_threads": 3, "need_communities": 2, "need_score": 60},
+    "simple": {"mode": "simple", "need_threads": 1, "need_top_relevance": 80, "need_coverage": 60},
+}
+
+
+def question_evidence_bar(mode: str) -> dict:
+    """The pass bar the UI should show for this evidence mode."""
+    return dict(QUESTION_EVIDENCE_BARS["simple" if mode == "simple" else "strict"])
+
+
+def question_evidence_fail_reasons(mode: str, threads: int, communities: int, score: int, top_relevance: int, coverage: int) -> list[str]:
+    """Why evidence missed its bar, most useful fix first. Empty exactly when it passed."""
+    bar = question_evidence_bar(mode)
+    if threads == 0:
+        return ["no_threads"]
+    reasons = []
+    if mode == "simple":
+        if top_relevance < bar["need_top_relevance"]:
+            reasons.append("low_relevance")
+        if coverage < bar["need_coverage"]:
+            reasons.append("low_coverage")
+        return reasons
+    if threads < bar["need_threads"]:
+        reasons.append("too_few_threads")
+    if communities < bar["need_communities"]:
+        reasons.append("too_few_communities")
+    if score < bar["need_score"]:
+        reasons.append("low_score")
+    return reasons
+
+
 def evaluate_question_sources(question: str, results: List[dict]) -> dict:
     """Score source relevance and return only evidence that is on topic."""
     if not results:
-        return {"relevant": [], "score": 0, "coverage": 0, "communities": 0, "passed": False, "mode": question_evidence_mode(question), "top_relevance": 0}
+        mode = question_evidence_mode(question)
+        return {"relevant": [], "score": 0, "coverage": 0, "communities": 0, "passed": False, "mode": mode, "top_relevance": 0, "bar": question_evidence_bar(mode), "fail_reasons": ["no_threads"]}
     listed = "\n\n".join(
         f"[S{i}] {result.get('title', '')}\n{result.get('snippet', '')}"
         for i, result in enumerate(results, 1)
@@ -310,6 +343,7 @@ def evaluate_question_sources(question: str, results: List[dict]) -> dict:
     else:
         evidence_score = round(relevance_score * diversity_factor * (coverage / 100))
         passed = len(relevant) >= 3 and communities >= 2 and evidence_score >= 60
+    fail_reasons = question_evidence_fail_reasons(mode, len(relevant), communities, evidence_score, top_relevance, coverage)
     return {
         "relevant": relevant,
         "score": evidence_score,
@@ -318,6 +352,8 @@ def evaluate_question_sources(question: str, results: List[dict]) -> dict:
         "passed": passed,
         "mode": mode,
         "top_relevance": top_relevance,
+        "bar": question_evidence_bar(mode),
+        "fail_reasons": fail_reasons,
     }
 
 def validate_question_answer(answer: str, claims: object, source_count: int) -> dict:

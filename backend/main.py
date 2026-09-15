@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
-from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
+from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar
 from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -742,11 +742,12 @@ def _question_confidence(score: int) -> str:
 
 def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
     simple = validation.get("mode") == "simple"
+    bar = question_evidence_bar(validation.get("mode", "strict"))
     source_passed = (
-        validation["verified"] >= 1
-        and validation.get("top_relevance", 0) >= 80
+        validation["verified"] >= bar["need_threads"]
+        and validation.get("top_relevance", 0) >= bar["need_top_relevance"]
         if simple
-        else validation["score"] >= 60 and validation["verified"] >= 3
+        else validation["score"] >= bar["need_score"] and validation["verified"] >= bar["need_threads"]
     )
     return [
         {
@@ -847,6 +848,8 @@ async def question_answer_stream(
                 "passed": evidence["passed"],
                 "mode": evidence["mode"],
                 "top_relevance": evidence["top_relevance"],
+                "bar": evidence["bar"],
+                "fail_reasons": evidence["fail_reasons"],
             }
             if scott_visible:
                 yield _question_event({
