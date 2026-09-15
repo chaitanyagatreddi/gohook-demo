@@ -40,7 +40,7 @@ function Step({ number, label, active, complete }: { number: string; label: stri
   )
 }
 
-export default function IdeateWireframe() {
+export default function IdeateWireframe({ embedded = false }: { embedded?: boolean }) {
   const [stage, setStage] = useState<Stage>('source')
   const [url, setUrl] = useState('')
   const [takeaway, setTakeaway] = useState('')
@@ -92,8 +92,8 @@ export default function IdeateWireframe() {
   const reset = () => { setStage('source'); setIdeas(null); setDraft(null); setError('') }
 
   return (
-    <div className="iw-shell">
-      <aside className="iw-sidebar">
+    <div className={embedded ? 'iw-embedded' : 'iw-shell'}>
+      {!embedded && <aside className="iw-sidebar">
         <div>
           <div className="iw-brand"><span>⌘</span> GoHook</div>
           <p>Your knowledge graph for Reddit.</p>
@@ -112,7 +112,7 @@ export default function IdeateWireframe() {
           <Step number="3" label="Edit the draft" active={stage === 'draft'} />
         </div>
         <button className="iw-back" onClick={reset}>← Back to start</button>
-      </aside>
+      </aside>}
 
       <main className="iw-main">
         <header className="iw-header">

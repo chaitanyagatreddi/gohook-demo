@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Board, { type BoardCard } from './Board'
 import Graph from './Graph'
+import IdeateWireframe from './IdeateWireframe'
 import { supabase } from './supabaseClient'
 import type { Session } from '@supabase/supabase-js'
 import OnboardingDeck from './OnboardingDeck'
@@ -154,7 +155,7 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
-  const [view, setView] = useState<'results' | 'questions' | 'board' | 'graph' | 'settings'>(() => {
+  const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'graph' | 'settings'>(() => {
     // Coming back from signing into Reddit: land on the Graph page.
     try {
       return new URLSearchParams(window.location.search).get('reddit') === 'connected' ? 'graph' : 'results'
@@ -1124,6 +1125,7 @@ export default function App() {
             {([
               { key: 'results', label: 'Results', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
               { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
+              { key: 'ideate', label: 'Ideate', icon: <><path d="M7 17L17 7" /><path d="M8 7h9v9" /></> },
               { key: 'questions', label: 'Questions', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></> },
               { key: 'graph', label: 'Graph', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="12" cy="17" r="2.5" /><path d="M8 7.5l8 -0.5M7.2 8.2L11 14.8M16.8 9.2L13 14.8" /></> },
               { key: 'settings', label: 'Settings', icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></> },
@@ -1187,6 +1189,8 @@ export default function App() {
           />
           )}
         </div>
+      ) : view === 'ideate' ? (
+        <IdeateWireframe embedded />
       ) : view === 'graph' ? (
         <Graph signedIn={!!session} onSignIn={() => setShowAuthGate(true)} />
       ) : (
