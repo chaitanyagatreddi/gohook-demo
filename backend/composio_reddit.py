@@ -165,6 +165,28 @@ async def get_profile(connected_account_id: str) -> Optional[dict]:
     }
 
 
+async def get_post_json(connected_account_id: str, permalink: str):
+    """Read one Reddit thread through the person's authenticated connection."""
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
+                f"{API}/tools/execute/proxy",
+                headers=_headers(),
+                json={
+                    "endpoint": f"{permalink.rstrip('/')}.json?raw_json=1",
+                    "method": "GET",
+                    "connected_account_id": connected_account_id,
+                },
+                timeout=45,
+            )
+            res.raise_for_status()
+            data = res.json().get("data") or {}
+            return data.get("response_data") or data
+    except Exception:
+        logger.exception("Could not read Reddit thread through the connection")
+        return None
+
+
 async def get_own_posts(user_id: str, username: str, limit: int = MAX_OWN_POSTS) -> list[dict]:
     """
     The person's own posts.

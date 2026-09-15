@@ -965,7 +965,7 @@ export default function App() {
     try {
       const res = await fetch(`${API}/comment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ post_url: postUrl, intent, platform: commentPlatform }),
       })
       if (!res.ok) {
@@ -993,7 +993,7 @@ export default function App() {
     try {
       const res = await fetch(`${API}/reddit-post`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ post_url: cleanedUrl }),
       })
       const data = await res.json()

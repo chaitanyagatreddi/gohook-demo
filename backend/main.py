@@ -972,16 +972,46 @@ class RelevantThreadsRequest(BaseModel):
 def clean_preview_text(text: str) -> str:
     text = re.sub(r"^.*?Skip to main content.*?Go to Reddit Home\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"^(?:Expand user menu|Open settings menu|Go to [^•]+•\s*\d+[a-z]+ ago|\[deleted\])\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^(?:Blogs?\s+Back\s+)?Home\s+Marketing\s+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\[\]\([^)]*\)", "", text)
     text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
     text = re.sub(r"\S+\]\(https?://\S*$", "", text)
-    text = re.sub(r"^\s*#+\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"#+\s*", "", text)
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
-async def fetch_source_content(url: str) -> str:
+def topic_overlap(topic: str, candidate: str) -> float:
+    ignored = {"about", "after", "again", "also", "and", "are", "from", "have", "into", "just", "more", "most", "only", "that", "the", "their", "then", "this", "they", "with", "what", "when", "will", "your"}
+    topic_terms = {term for term in re.findall(r"[a-z0-9]{4,}", topic.lower()) if term not in ignored}
+    candidate_terms = set(re.findall(r"[a-z0-9]{4,}", candidate.lower()))
+    if not topic_terms:
+        return 0.0
+    return len(topic_terms & candidate_terms) / min(4, len(topic_terms))
+
+
+async def fetch_reddit_post_through_connection(url: str, user_id: Optional[str]) -> Optional[str]:
+    if not user_id:
+        return None
+    saved = await composio_reddit.read_connection(user_id)
+    if not saved or saved.get("status") != "active":
+        return None
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    raw = await composio_reddit.get_post_json(saved["connected_account_id"], parsed.path)
+    if not isinstance(raw, list) or not raw:
+        return None
+    try:
+        post = raw[0]["data"]["children"][0]["data"]
+        title = (post.get("title") or "").strip()
+        body = (post.get("selftext") or "").strip()
+        return f"{title}\n\n{body}".strip() if title or body else None
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+async def fetch_source_content(url: str, user_id: Optional[str] = None) -> str:
     from urllib.parse import urlparse
 
     parsed = urlparse(url.strip())
@@ -1003,7 +1033,14 @@ async def fetch_source_content(url: str) -> str:
             if title or body:
                 return f"{title}\n\n{body}".strip()
         except Exception:
-            logger.warning("Direct Reddit fetch failed; trying content extraction", exc_info=True)
+            logger.warning("Direct Reddit fetch failed; trying authenticated connection", exc_info=True)
+        connected_post = await fetch_reddit_post_through_connection(url, user_id)
+        if connected_post:
+            return connected_post
+        raise HTTPException(
+            status_code=422,
+            detail="Could not verify the exact Reddit post. Connect Reddit and try again rather than drafting from an unverified preview.",
+        )
 
     try:
         if PARALLEL_API_KEY:
@@ -1034,10 +1071,10 @@ async def fetch_source_content(url: str) -> str:
 
 
 @app.post("/reddit-post")
-async def reddit_post(req: RedditPostRequest):
+async def reddit_post(req: RedditPostRequest, user_id: Optional[str] = Depends(get_current_user)):
     if not req.post_url.strip():
         raise HTTPException(status_code=400, detail="Please enter a valid public URL")
-    post = await fetch_source_content(req.post_url)
+    post = await fetch_source_content(req.post_url, user_id)
     return {"post": post, "preview": clean_preview_text(post[:280])}
 
 
@@ -1077,6 +1114,8 @@ async def relevant_threads(req: RelevantThreadsRequest):
                 threads.append({"title": title, "url": url, "subreddit": item.get("subreddit_name_prefixed", ""), "snippet": clean_preview_text(item.get("snippet", ""))})
                 if len(threads) >= 5:
                     break
+        if threads and max(topic_overlap(req.topic, f"{thread['title']} {thread['snippet']}") for thread in threads) < 0.5:
+            fallback = True
         return {
             "threads": threads,
             "fallback": fallback,
@@ -1087,11 +1126,11 @@ async def relevant_threads(req: RelevantThreadsRequest):
 
 
 @app.post("/comment")
-async def comment(req: CommentRequest):
+async def comment(req: CommentRequest, user_id: Optional[str] = Depends(get_current_user)):
     if not req.intent.strip() or (not req.post.strip() and not (req.post_url or "").strip()):
         raise HTTPException(status_code=400, detail="Reddit post URL and intent cannot be empty")
     try:
-        post = await fetch_source_content(req.post_url) if req.post_url else req.post
+        post = await fetch_source_content(req.post_url, user_id) if req.post_url else req.post
         return await run_in_threadpool(draft_comment, post, req.intent)
     except HTTPException:
         raise
