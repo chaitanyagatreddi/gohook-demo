@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import Board, { type BoardCard, BOARD_COLUMN_KEYS } from './Board'
+import { upsertReplyCard } from './boardUpsert'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase } from './supabaseClient'
@@ -767,6 +768,17 @@ export default function App() {
   const [comment, setComment] = useState<Draft | null>(null)
   const [commentError, setCommentError] = useState('')
   const [commentCopied, setCommentCopied] = useState(false)
+  const [replyBoardStatus, setReplyBoardStatus] = useState<'' | 'added' | 'updated'>('')
+
+  function addReplyToBoard() {
+    if (!comment?.draft || !postUrl.trim()) return
+    const result = upsertReplyCard(board, { url: cleanSourceUrl(postUrl), draft: comment.draft, preview: postPreview })
+    setBoard(() => result.board)
+    if (result.action === 'added') {
+      tellGraphSaved([{ title: postPreview.slice(0, 120), selftext: postPreview, url: cleanSourceUrl(postUrl), permalink: cleanSourceUrl(postUrl) }])
+    }
+    setReplyBoardStatus(result.action)
+  }
   const [commentPlatform, setCommentPlatform] = useState<'reddit' | 'hn'>('reddit')
   const [postFetched, setPostFetched] = useState(false)
   const [postPreview, setPostPreview] = useState('')
@@ -968,6 +980,7 @@ export default function App() {
     setCommenting(true)
     setCommentError('')
     setComment(null)
+    setReplyBoardStatus('')
     try {
       const res = await fetch(`${API}/comment`, {
         method: 'POST',
@@ -2206,8 +2219,15 @@ export default function App() {
                         tone: {comment.tone}
                       </span>
                       <button
+                        onClick={addReplyToBoard}
+                        className={`ml-auto rounded-md border px-2 py-0.5 transition-colors ${replyBoardStatus ? 'border-[#50c878]/40 text-[#50c878]' : 'border-[#3a4250] text-[#e8eaed] hover:border-[#ff4500]/60 hover:text-[#ff6a33]'}`}
+                        title="Save this reply to the Board, in Ready to post"
+                      >
+                        {replyBoardStatus === 'added' ? '✓ Added to Ready to post' : replyBoardStatus === 'updated' ? '✓ Updated card in Ready to post' : '+ Board'}
+                      </button>
+                      <button
                         onClick={copyComment}
-                        className="ml-auto text-[#ff6a33] hover:underline"
+                        className="text-[#ff6a33] hover:underline"
                       >
                         {commentCopied ? '✓ Copied!' : 'Copy comment ↗'}
                       </button>
