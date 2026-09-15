@@ -512,3 +512,110 @@ def detect_tone(text: str) -> str:
     if "?" in text and text.count("?") >= 2:
         return "questioning"
     return "casual"
+
+
+IDEATE_ANGLES_SYSTEM_PROMPT = """You turn one web page into Reddit post ideas that start a real discussion.
+
+You get: the page text, an optional takeaway from the author, and subreddits where the topic
+is already discussed (with example thread titles).
+
+Return JSON: {"angles": [ ... 3 to 5 items ... ]}. Each item:
+- "title": a Reddit post title (under 110 characters), not clickbait, not a headline copied from the page
+- "hook": the first 1-2 sentences of the post
+- "subreddit": one of the given subreddits (like "r/marketing")
+- "post_type": one of "question", "story", "lesson", "data"
+- "why_fits": one sentence on why this fits that subreddit, based on its example threads
+- "promo_risk": "low", "medium" or "high" chance of being removed as self-promotion
+- "include_link": "no link", "link in a comment" or "link in post" — prefer "no link"
+
+Rules:
+- Use only claims that are in the page. Never invent numbers, names or results.
+- Each angle must be a different conversation, not the same idea reworded.
+- Lead with the reader's problem or a question, not with the author's product.
+- If a subreddit list is empty, suggest well-known relevant subreddits and mark promo_risk honestly."""
+
+
+IDEATE_DRAFT_SYSTEM_PROMPT = """You write one Reddit post from a chosen idea and the source page.
+
+Return JSON: {"title": "...", "draft": "...", "link_placement": "..."}.
+
+Rules:
+- Casual, human, short paragraphs, 80-200 words. No marketing speak, no emoji, no markdown.
+- Open with the hook idea; end with a real question that invites replies.
+- Use only facts from the page. Never invent numbers, names or results.
+- Match the tone of the example thread titles for that subreddit.
+- Follow the idea's link choice. "no link": no URL in the post. "link in a comment": no URL in the post,
+  and set link_placement to "Add the link in a comment if someone asks". "link in post": at most one link, at the end.
+- link_placement: one short sentence telling the author where the link goes."""
+
+
+def generate_post_angles(page_text: str, takeaway: str, subreddits: List[dict]) -> List[dict]:
+    listed = "\n".join(
+        f"- {s['name']}: " + " | ".join(s.get("example_threads", [])[:3])
+        for s in subreddits
+    ) or "(none found)"
+    user = (
+        f"Page text:\n{page_text[:5000]}\n\n"
+        f"Author's takeaway: {takeaway.strip() or '(not given)'}\n\n"
+        f"Subreddits already discussing this topic:\n{listed}"
+    )
+    resp = get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": IDEATE_ANGLES_SYSTEM_PROMPT},
+            {"role": "user", "content": user},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.7,
+        max_tokens=1200,
+    )
+    data = json.loads(resp.choices[0].message.content or "{}")
+    angles = []
+    for i, a in enumerate((data.get("angles") or [])[:5], 1):
+        if not isinstance(a, dict) or not (a.get("title") or "").strip():
+            continue
+        risk = str(a.get("promo_risk", "medium")).lower()
+        link = str(a.get("include_link", "no link")).lower()
+        post_type = str(a.get("post_type", "question")).lower()
+        angles.append({
+            "id": str(i),
+            "title": a["title"].strip(),
+            "hook": (a.get("hook") or "").strip(),
+            "subreddit": (a.get("subreddit") or "").strip(),
+            "post_type": post_type if post_type in {"question", "story", "lesson", "data"} else "question",
+            "why_fits": (a.get("why_fits") or "").strip(),
+            "promo_risk": risk if risk in {"low", "medium", "high"} else "medium",
+            "include_link": link if link in {"no link", "link in a comment", "link in post"} else "no link",
+        })
+    return angles
+
+
+def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_threads: List[str]) -> dict:
+    user = (
+        f"Chosen idea:\n{json.dumps(angle, ensure_ascii=False)}\n\n"
+        f"Author's takeaway: {takeaway.strip() or '(not given)'}\n\n"
+        f"Example thread titles from {angle.get('subreddit') or 'the subreddit'}:\n"
+        + ("\n".join(f"- {t}" for t in example_threads[:5]) or "(none)")
+        + f"\n\nPage text:\n{page_text[:5000]}"
+    )
+    resp = get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": IDEATE_DRAFT_SYSTEM_PROMPT},
+            {"role": "user", "content": user},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.7,
+        max_tokens=700,
+    )
+    data = json.loads(resp.choices[0].message.content or "{}")
+    draft = (data.get("draft") or "").strip()
+    if not draft:
+        raise ValueError("Empty draft")
+    return {
+        "title": (data.get("title") or angle.get("title") or "").strip(),
+        "draft": draft,
+        "word_count": len(draft.split()),
+        "tone": detect_tone(draft),
+        "link_placement": (data.get("link_placement") or "").strip(),
+    }

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
-from generator import draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
+from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources
 from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -1216,6 +1216,83 @@ async def relevant_threads(req: RelevantThreadsRequest):
     except Exception:
         logger.exception("Relevant Reddit thread search failed")
         raise HTTPException(status_code=502, detail="Could not find relevant Reddit threads right now.")
+
+
+class IdeateAnglesRequest(BaseModel):
+    url: str
+    takeaway: str = ""
+
+
+class IdeateDraftRequest(BaseModel):
+    url: str
+    angle: dict
+    takeaway: str = ""
+    example_threads: List[str] = []
+
+
+async def find_discussing_subreddits(topic: str, source_url: str = "") -> list[dict]:
+    """Subreddits where this topic already comes up, with example thread titles."""
+    source = source_url.split("?", 1)[0].rstrip("/").lower()
+    results = await search_web(f"{topic[:200]} discussion", limit=10, reddit_only=True)
+    groups: dict[str, dict] = {}
+    seen_ids: set[str] = set()
+    for item in results:
+        url = item.get("url", "")
+        name = item.get("subreddit_name_prefixed", "")
+        thread_id = reddit_thread_id(url)
+        if not name or "/comments/" not in url or url.split("?", 1)[0].rstrip("/").lower() == source:
+            continue
+        if thread_id and thread_id in seen_ids:
+            continue
+        if thread_id:
+            seen_ids.add(thread_id)
+        title = re.sub(r"\s*(?::\s*r/[A-Za-z0-9_]+)?\s*(?:-\s*Reddit)?\s*$", "", clean_preview_text(item.get("title", "")))
+        title = re.sub(r"^r/[A-Za-z0-9_]+ on Reddit:\s*", "", title)
+        group = groups.setdefault(name.lower(), {"name": name, "example_threads": [], "thread_urls": []})
+        group["example_threads"].append(title)
+        group["thread_urls"].append(url)
+    ranked = sorted(groups.values(), key=lambda g: len(g["example_threads"]), reverse=True)
+    return ranked[:5]
+
+
+@app.post("/ideate/angles")
+async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depends(get_current_user)):
+    if not req.url.strip():
+        raise HTTPException(status_code=400, detail="Please enter a link")
+    page_text = await fetch_source_content(req.url, user_id)
+    lines = [line.strip() for line in page_text.splitlines() if line.strip()]
+    source_title = clean_preview_text(lines[0])[:160] if lines else ""
+    topic = f"{source_title} {req.takeaway}".strip() or page_text[:200]
+    try:
+        subreddits = await find_discussing_subreddits(topic, req.url)
+    except Exception:
+        logger.exception("Subreddit discovery failed")
+        subreddits = []
+    try:
+        angles = await run_in_threadpool(generate_post_angles, page_text, req.takeaway, subreddits)
+    except Exception:
+        logger.exception("Post angle generation failed")
+        raise HTTPException(status_code=500, detail="Could not create post ideas. Please try again.")
+    if not angles:
+        raise HTTPException(status_code=502, detail="Could not create post ideas from that page.")
+    return {
+        "source_title": source_title,
+        "source_preview": clean_preview_text(page_text[:280]),
+        "subreddits": subreddits,
+        "angles": angles,
+    }
+
+
+@app.post("/ideate/draft")
+async def ideate_draft(req: IdeateDraftRequest, user_id: Optional[str] = Depends(get_current_user)):
+    if not req.url.strip() or not (req.angle or {}).get("title"):
+        raise HTTPException(status_code=400, detail="A link and a chosen idea are required")
+    page_text = await fetch_source_content(req.url, user_id)
+    try:
+        return await run_in_threadpool(draft_post_from_angle, page_text, req.angle, req.takeaway, req.example_threads)
+    except Exception:
+        logger.exception("Ideate draft failed")
+        raise HTTPException(status_code=500, detail="Could not write the draft. Please try again.")
 
 
 @app.post("/comment")
