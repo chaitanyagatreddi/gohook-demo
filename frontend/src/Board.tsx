@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export type BoardColumn = 'new' | 'reviewing' | 'actioned'
+export type BoardColumn = 'new' | 'reviewing' | 'ready' | 'actioned'
 
 export type BoardCard = {
   id: string
@@ -12,11 +12,17 @@ export type BoardCard = {
   category?: string
   origin?: string
   column: BoardColumn
+  draft?: string        // a generated reply waiting to be posted
+  thread_id?: string    // Reddit thread id, used to find this card again
+  updated_at?: string
 }
+
+export const BOARD_COLUMN_KEYS: BoardColumn[] = ['new', 'reviewing', 'ready', 'actioned']
 
 const COLUMNS: { key: BoardColumn; label: string }[] = [
   { key: 'new', label: 'New' },
   { key: 'reviewing', label: 'Reviewing' },
+  { key: 'ready', label: 'Ready to post' },
   { key: 'actioned', label: 'Actioned' },
 ]
 
@@ -27,6 +33,7 @@ const ORIGIN_BADGE: Record<string, string> = {
   praise: 'bg-[#e879f9]/15 text-[#e879f9]',
   quotes: 'bg-[#9aa4b2]/15 text-[#9aa4b2]',
   question: 'bg-[#ffb020]/15 text-[#ffb020]',
+  reply: 'bg-[#50c878]/15 text-[#50c878]',
 }
 
 export default function Board({
@@ -40,6 +47,17 @@ export default function Board({
 }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overCol, setOverCol] = useState<BoardColumn | null>(null)
+  const [openDraft, setOpenDraft] = useState<string | null>(null)
+  const [copiedDraft, setCopiedDraft] = useState<string | null>(null)
+
+  async function copyDraft(card: BoardCard) {
+    if (!card.draft) return
+    try {
+      await navigator.clipboard.writeText(card.draft)
+      setCopiedDraft(card.id)
+      setTimeout(() => setCopiedDraft(c => (c === card.id ? null : c)), 1500)
+    } catch { /* clipboard blocked; the draft is still visible */ }
+  }
 
   function moveCard(id: string, column: BoardColumn) {
     setBoard(prev => prev.map(c => (c.id === id ? { ...c, column } : c)))
@@ -61,7 +79,7 @@ export default function Board({
   }
 
   return (
-    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {COLUMNS.map(col => {
         const cards = board.filter(c => c.column === col.key)
         return (
@@ -100,6 +118,19 @@ export default function Board({
                 >
                   {card.title && <p className="text-sm font-semibold text-[#e8eaed] mb-1.5 leading-snug">{card.title}</p>}
                   <p className="text-[13px] text-[#d7dbe1] leading-relaxed line-clamp-4">{card.text}</p>
+                  {card.draft && (
+                    <div className="mt-3 rounded-lg border border-[#50c878]/20 bg-[#50c878]/5 p-2.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <button onClick={() => setOpenDraft(o => (o === card.id ? null : card.id))} className="font-medium text-[#50c878] hover:underline">
+                          {openDraft === card.id ? 'Hide reply' : 'Show reply'}
+                        </button>
+                        <button onClick={() => copyDraft(card)} className="text-[#ff6a33] hover:underline">
+                          {copiedDraft === card.id ? '✓ Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      {openDraft === card.id && <p className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-[#d7dbe1]">{card.draft}</p>}
+                    </div>
+                  )}
                   <div className="mt-3 flex items-center gap-2 text-[11px] text-[#9aa4b2]">
                     <span>{card.subreddit}</span>
                     {card.reddit_score > 0 && <span>▲ {card.reddit_score}</span>}

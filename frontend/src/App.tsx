@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import Board, { type BoardCard } from './Board'
+import Board, { type BoardCard, BOARD_COLUMN_KEYS } from './Board'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase } from './supabaseClient'
@@ -177,7 +177,9 @@ export default function App() {
   const [board, setBoard] = useState<BoardCard[]>(() => {
     try {
       const raw = localStorage.getItem('redditscan_board')
-      return raw ? JSON.parse(raw) : []
+      const saved: BoardCard[] = raw ? JSON.parse(raw) : []
+      // Cards saved with a column this version doesn't know go back to New.
+      return saved.map(card => (BOARD_COLUMN_KEYS.includes(card.column) ? card : { ...card, column: 'new' }))
     } catch {
       return []
     }
@@ -270,7 +272,6 @@ export default function App() {
     } catch { /* the Board save already happened; leave it */ }
   }
 
-  // Compose section (Notepad + Reply) collapsed by default
   const [ideateTab, setIdeateTab] = useState<'idea' | 'url'>('idea')
 
   // Notepad state
@@ -2078,7 +2079,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Compose (Notepad + Reply) collapsed until needed */}
         {view === 'reply' && (
           <div>
             <div className="border-b border-[#242a33] pb-6 mb-6">
