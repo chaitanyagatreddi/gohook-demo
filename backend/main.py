@@ -1114,7 +1114,7 @@ async def relevant_threads(req: RelevantThreadsRequest):
                 threads.append({"title": title, "url": url, "subreddit": item.get("subreddit_name_prefixed", ""), "snippet": clean_preview_text(item.get("snippet", ""))})
                 if len(threads) >= 5:
                     break
-        if threads and max(topic_overlap(req.topic, f"{thread['title']} {thread['snippet']}") for thread in threads) < 0.5:
+        if threads and max(topic_overlap(req.topic, f"{thread['title']} {thread['snippet']}") for thread in threads) < 0.75:
             fallback = True
         return {
             "threads": threads,
