@@ -273,6 +273,7 @@ class SearchRequest(BaseModel):
     query: str
     subreddits: List[str] = ["SaaS", "entrepreneur", "productivity", "startups"]
     expand: bool = False  # run extra Serper queries for broader coverage
+    freshness: str = "any"  # any, day, week, or month
 
 
 class ScottAccessUpdate(BaseModel):
@@ -518,8 +519,10 @@ async def new_user_webhook(payload: dict, x_webhook_secret: Optional[str] = Head
 async def search(req: SearchRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
+    if req.freshness not in {"any", "day", "week", "month"}:
+        raise HTTPException(status_code=400, detail="Freshness must be any, day, week or month")
 
-    posts = await crawl_reddit(req.query, req.subreddits, expand=req.expand)
+    posts = await crawl_reddit(req.query, req.subreddits, expand=req.expand, freshness=req.freshness)
 
     if not posts:
         raise HTTPException(status_code=404, detail="No Reddit posts found")
@@ -529,6 +532,7 @@ async def search(req: SearchRequest):
     intel["subreddits_searched"] = req.subreddits
     intel["total_posts_scanned"] = len(posts)
     intel["expanded"] = req.expand
+    intel["freshness"] = req.freshness
 
     return intel
 

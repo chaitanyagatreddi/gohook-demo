@@ -9,7 +9,7 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 SERPER_URL = "https://google.serper.dev/search"
 
 
-async def search_reddit(client: httpx.AsyncClient, query: str) -> list[dict]:
+async def search_reddit(client: httpx.AsyncClient, query: str, freshness: str = "any") -> list[dict]:
     if not SERPER_API_KEY:
         raise ValueError("SERPER_API_KEY not set in .env")
 
@@ -17,6 +17,8 @@ async def search_reddit(client: httpx.AsyncClient, query: str) -> list[dict]:
         "q": f"{query} reddit",
         "num": 20,
     }
+    if freshness in {"day", "week", "month"}:
+        payload["tbs"] = f"qdr:{freshness[0]}"
     headers = {
         "X-API-KEY": SERPER_API_KEY,
         "Content-Type": "application/json",
@@ -83,7 +85,7 @@ async def search_many(queries: list[str], limit: int = 20) -> list[dict]:
     return posts[:limit]
 
 
-async def crawl_reddit(query: str, subreddits: list[str], expand: bool = False) -> list[dict]:
+async def crawl_reddit(query: str, subreddits: list[str], expand: bool = False, freshness: str = "any") -> list[dict]:
     all_posts = []
     seen_urls = set()
 
@@ -92,7 +94,7 @@ async def crawl_reddit(query: str, subreddits: list[str], expand: bool = False) 
     async with httpx.AsyncClient() as client:
         for extra in queries:
             q = f"{query} {extra}".strip()
-            posts = await search_reddit(client, q)
+            posts = await search_reddit(client, q, freshness=freshness)
             for p in posts:
                 dedup_key = p["permalink"].split("?")[0].split("#")[0].rstrip("/")
                 if dedup_key not in seen_urls:

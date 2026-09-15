@@ -26,6 +26,7 @@ type Intel = {
   comparisons: ResultItem[]
   praise: ResultItem[]
   quotes: ResultItem[]
+  freshness?: string
 }
 
 type Tab = 'pricing' | 'complaints' | 'comparisons' | 'praise' | 'quotes'
@@ -136,6 +137,7 @@ export default function App() {
   const [intel, setIntel] = useState<Intel | null>(null)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<Tab>('quotes')
+  const [freshness, setFreshness] = useState<'any' | 'day' | 'week' | 'month'>('any')
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
@@ -837,7 +839,7 @@ export default function App() {
         const res = await fetch(`${API}/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q, expand }),
+          body: JSON.stringify({ query: q, expand, freshness }),
         })
         if (!res.ok) {
           const err = await res.json()
@@ -1169,6 +1171,17 @@ export default function App() {
             placeholder="Ask a Reddit question…"
             className="flex-1 min-w-0 bg-[#14171c] border border-[#242a33] rounded-xl px-4 py-3 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
           />
+          <select
+            value={freshness}
+            onChange={e => setFreshness(e.target.value as typeof freshness)}
+            className="bg-[#14171c] border border-[#242a33] rounded-xl px-3 py-3 text-sm text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+            aria-label="Freshness"
+          >
+            <option value="any">Any age</option>
+            <option value="day">Past 24 hours</option>
+            <option value="week">Past week</option>
+            <option value="month">Past month</option>
+          </select>
           <button
             onClick={() => doSearch(query)}
             disabled={loading}
