@@ -221,6 +221,7 @@ async def save_question_memory(user_id: str, question: str, answer: Optional[dic
     memory = {
         "answer": str((answer or {}).get("answer", "")).strip(),
         "sources": (answer or {}).get("sources", [])[:6],
+        "withheld": bool((answer or {}).get("withheld", False)),
     }
     async with httpx.AsyncClient() as client:
         res = await client.post(

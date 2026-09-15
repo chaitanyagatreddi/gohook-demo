@@ -740,6 +740,20 @@ def _question_confidence(score: int) -> str:
     return "Low"
 
 
+def _claim_fail_reasons(answer_review: dict) -> list[str]:
+    """Why a generated answer's citations did not pass. Empty exactly when they passed."""
+    if answer_review["passed"]:
+        return []
+    reasons = []
+    if answer_review["claim_count"] == 0:
+        reasons.append("no_claims")
+    if answer_review["invalid_claims"] or answer_review["invalid_citations"]:
+        reasons.append("invalid_citations")
+    if answer_review["unmapped_citations"]:
+        reasons.append("unmapped_citations")
+    return reasons or ["no_claims"]
+
+
 def _question_checks(validation: dict, answer_review: dict) -> list[dict]:
     simple = validation.get("mode") == "simple"
     bar = question_evidence_bar(validation.get("mode", "strict"))
@@ -820,15 +834,17 @@ async def question_answer_stream(
             candidates = verified_reddit_threads(initial)
             if scott_visible:
                 yield _question_event({"type": "stage", "stage": "filter", "status": "passed" if candidates else "review", "detail": f"{len(candidates)} verified Reddit threads remain"})
-                yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": "Scoring source relevance"})
+                yield _question_event({"type": "stage", "stage": "validate", "status": "active", "detail": f"Checking {len(candidates)} threads across {len({c.get('subreddit_name_prefixed') for c in candidates if c.get('subreddit_name_prefixed')})} communities"})
             evidence = await run_in_threadpool(evaluate_question_sources, research_question, candidates)
             retried = not evidence["passed"]
+            retry_count = 0
 
             if retried:
                 if scott_visible:
                     yield _question_event({"type": "stage", "stage": "validate", "status": "review", "detail": f"Evidence score {evidence['score']}/100; refining research"})
                     yield _question_event({"type": "stage", "stage": "refine", "status": "active", "detail": "Running a focused second search"})
                 retry = await search_web(f"{research_question} experience discussion", limit=6, reddit_only=True)
+                retry_count = len(retry)
                 candidates = verified_reddit_threads(initial + retry)
                 if scott_visible:
                     yield _question_event({"type": "stage", "stage": "refine", "status": "passed", "detail": f"Added {len(retry)} candidates; {len(candidates)} verified threads remain"})
@@ -839,7 +855,7 @@ async def question_answer_stream(
 
             results = evidence["relevant"][:6]
             validation = {
-                "checked": len(initial) + (6 if retried else 0),
+                "checked": len(initial) + retry_count,
                 "verified": len(results),
                 "communities": evidence["communities"],
                 "score": evidence["score"],
@@ -867,11 +883,15 @@ async def question_answer_stream(
                         if validation["mode"] == "simple"
                         else f"Evidence score {validation['score']}/100"
                     ) + (" · passed" if validation["passed"] else " · needs review"),
+                    "reasons": validation["fail_reasons"],
+                    "actual": {"threads": validation["verified"], "communities": validation["communities"], "score": validation["score"], "top_relevance": validation["top_relevance"], "coverage": validation["coverage"]},
+                    "need": validation["bar"],
                 })
 
             if scott_visible:
                 yield _question_event({"type": "stage", "stage": "answer", "status": "active", "detail": "Mapping claims to sources"})
-            if validation["passed"] and results:
+            withheld = not (validation["passed"] and results)
+            if not withheld:
                 answer = await run_in_threadpool(generate_question_answer, req.brief, research_question, results)
             else:
                 answer = {
@@ -921,12 +941,14 @@ async def question_answer_stream(
             elif scott_visible:
                 yield _question_event({"type": "stage", "stage": "correct", "status": "review", "detail": f"Final score {validation['score']}/100 · {_question_confidence(validation['score'])} confidence · Answer withheld"})
 
+            answer["withheld"] = withheld
             answer["validation"] = validation
             answer["run"] = {
                 "passed": validation["passed"] and answer_review["passed"],
                 "claims": answer_review["claims"],
                 "attempts": attempts,
                 "checks": _question_checks(validation, answer_review),
+                "claim_fail_reasons": [] if withheld else _claim_fail_reasons(answer_review),
             }
             if identity:
                 try:
