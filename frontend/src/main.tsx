@@ -2,10 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 
-const isIdeateWireframe = new URLSearchParams(window.location.search).get('wireframe') === 'ideate'
-const { default: RootComponent } = isIdeateWireframe
+const wireframe = new URLSearchParams(window.location.search).get('wireframe')
+const { default: RootComponent } = wireframe === 'ideate'
   ? await import('./IdeateWireframe.tsx')
-  : await import('./App.tsx')
+  : wireframe === 'review'
+    ? await import('./QuestionRunWireframe.tsx')
+    : await import('./App.tsx')
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
