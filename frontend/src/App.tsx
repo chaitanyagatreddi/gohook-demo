@@ -1147,7 +1147,7 @@ export default function App() {
   const stepFailureCode = (number: string) => {
     if ((number === '02' || number === '03') && validationReasons.includes('no_threads')) return 'no_threads'
     if (number === '04') return validationReasons[0]
-    if (number === '05' && /added 0/i.test(questionWorkflowDisplaySteps[4].detail)) return 'no_threads'
+    if (number === '05' && /added 0/i.test(questionWorkflowDisplaySteps.find(step => step.number === '05')?.detail ?? '')) return 'no_threads'
     if (number === '06') return claimReasons[0] ?? (questionRun?.claims.length === 0 ? 'no_claims' : '')
     return ''
   }
@@ -1516,7 +1516,7 @@ export default function App() {
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-300">Honest result</p>
                     <p className="mt-1 text-sm font-semibold text-[#e8eaed]">{failureLine(allFailureReasons[0])}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-[#9aa4b2]">{allFailureReasons.slice(0, 2).map(failureLine).join(' · ')}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#9aa4b2]">{allFailureReasons.length > 1 ? allFailureReasons.slice(1, 3).map(failureLine).join(' · ') : failureWhy(allFailureReasons[0])}</p>
                   </div>
                 </div>
               )}
