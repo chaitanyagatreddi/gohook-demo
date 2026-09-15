@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import VoiceProfile from './VoiceProfile'
 
 type Stage = 'source' | 'angles' | 'draft'
 
@@ -122,7 +121,7 @@ export default function IdeateWireframe({ embedded = false }: { embedded?: boole
             <h1>Share your page on Reddit without getting removed.</h1>
             <p>Paste a link. We find the subreddits already talking about it and give you post ideas that start a discussion, not a self-promo.</p>
           </div>
-          <div className="iw-header-actions"><VoiceProfile /><span className="iw-badge">Beta</span></div>
+          <span className="iw-badge">Beta</span>
         </header>
 
         <section className="iw-source-card">
