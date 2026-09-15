@@ -988,7 +988,7 @@ def topic_overlap(topic: str, candidate: str) -> float:
     candidate_terms = set(re.findall(r"[a-z0-9]{4,}", candidate.lower()))
     if not topic_terms:
         return 0.0
-    return len(topic_terms & candidate_terms) / min(4, len(topic_terms))
+    return len(topic_terms & candidate_terms) / len(topic_terms)
 
 
 async def fetch_reddit_post_through_connection(url: str, user_id: Optional[str]) -> Optional[str]:
@@ -1114,7 +1114,7 @@ async def relevant_threads(req: RelevantThreadsRequest):
                 threads.append({"title": title, "url": url, "subreddit": item.get("subreddit_name_prefixed", ""), "snippet": clean_preview_text(item.get("snippet", ""))})
                 if len(threads) >= 5:
                     break
-        if threads and max(topic_overlap(req.topic, f"{thread['title']} {thread['snippet']}") for thread in threads) < 0.75:
+        if threads and max(topic_overlap(req.topic, f"{thread['title']} {thread['snippet']}") for thread in threads) < 0.8:
             fallback = True
         return {
             "threads": threads,
