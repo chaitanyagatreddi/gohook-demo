@@ -956,6 +956,10 @@ class CommentRequest(BaseModel):
     intent: str  # what the user wants to say
 
 
+class RedditPostRequest(BaseModel):
+    post_url: str
+
+
 async def fetch_reddit_post(url: str) -> str:
     from urllib.parse import urlparse
 
@@ -1011,6 +1015,14 @@ async def fetch_reddit_post(url: str) -> str:
     if not title and not body:
         raise HTTPException(status_code=422, detail="That Reddit post has no readable text")
     return f"{title}\n\n{body}".strip()
+
+
+@app.post("/reddit-post")
+async def reddit_post(req: RedditPostRequest):
+    if not req.post_url.strip():
+        raise HTTPException(status_code=400, detail="Please enter a Reddit post URL")
+    post = await fetch_reddit_post(req.post_url)
+    return {"post": post, "preview": post[:280]}
 
 
 @app.post("/comment")

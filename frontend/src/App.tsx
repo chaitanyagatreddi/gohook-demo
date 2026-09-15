@@ -747,6 +747,9 @@ export default function App() {
   const [commentError, setCommentError] = useState('')
   const [commentCopied, setCommentCopied] = useState(false)
   const [commentPlatform, setCommentPlatform] = useState<'reddit' | 'hn'>('reddit')
+  const [postFetched, setPostFetched] = useState(false)
+  const [postPreview, setPostPreview] = useState('')
+  const [fetchingPost, setFetchingPost] = useState(false)
 
   // Auto-search from URL param: ?q=Notion
   useEffect(() => {
@@ -937,7 +940,7 @@ export default function App() {
   }
 
   async function generateComment() {
-    if (!postUrl.trim() || !intent.trim()) return
+    if (!postFetched || !postUrl.trim() || !intent.trim()) return
     setCommenting(true)
     setCommentError('')
     setComment(null)
@@ -959,8 +962,33 @@ export default function App() {
     }
   }
 
+  async function fetchPost() {
+    if (!postUrl.trim()) return
+    setFetchingPost(true)
+    setPostFetched(false)
+    setPostPreview('')
+    setCommentError('')
+    try {
+      const res = await fetch(`${API}/reddit-post`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ post_url: postUrl }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Could not fetch that post')
+      setPostPreview(data.preview || '')
+      setPostFetched(true)
+    } catch (e: unknown) {
+      setCommentError(e instanceof Error ? e.message : 'Could not fetch that post')
+    } finally {
+      setFetchingPost(false)
+    }
+  }
+
   function handleReply(item: ResultItem) {
     setPostUrl(item.source_url)
+    setPostFetched(false)
+    setPostPreview('')
     setComment(null)
     setCommentError('')
     setIntent('')
@@ -1942,10 +1970,30 @@ export default function App() {
                 </label>
                 <textarea
                   value={postUrl}
-                  onChange={e => setPostUrl(e.target.value)}
+                  onChange={e => {
+                    setPostUrl(e.target.value)
+                    setPostFetched(false)
+                    setPostPreview('')
+                  }}
                   placeholder="https://www.reddit.com/r/.../comments/..."
                   className="mt-1 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
                 />
+
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    onClick={fetchPost}
+                    disabled={fetchingPost || !postUrl.trim()}
+                    className="border border-[#ff4500] text-[#ff6a33] hover:bg-[#ff4500]/10 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
+                  >
+                    {fetchingPost ? 'Fetching…' : postFetched ? 'Post fetched ✓' : 'Fetch post'}
+                  </button>
+                  {postFetched && <span className="text-xs text-emerald-400">URL verified. Ready to draft.</span>}
+                </div>
+                {postFetched && postPreview && (
+                  <div className="mt-2 rounded-lg border border-[#242a33] bg-[#0f1216] px-3 py-2 text-xs text-[#9aa4b2]">
+                    {postPreview}{postPreview.length >= 280 ? '…' : ''}
+                  </div>
+                )}
 
                 <label className="mt-3 flex items-center gap-1.5 text-xs font-medium text-[#9aa4b2]">
                   What you want to say
@@ -1972,7 +2020,7 @@ export default function App() {
                 <div className="mt-2 flex items-center justify-end">
                   <button
                     onClick={generateComment}
-                    disabled={commenting || !postUrl.trim() || !intent.trim()}
+                    disabled={commenting || !postFetched || !intent.trim()}
                     className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-colors"
                   >
                     {commenting ? 'Drafting…' : 'Generate comment →'}
