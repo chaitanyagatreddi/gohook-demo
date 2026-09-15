@@ -971,6 +971,7 @@ class RelevantThreadsRequest(BaseModel):
 
 def clean_preview_text(text: str) -> str:
     text = re.sub(r"^.*?Skip to main content.*?Go to Reddit Home\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^(?:Expand user menu|Open settings menu|Go to [^•]+•\s*\d+[a-z]+ ago|\[deleted\])\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\[\]\([^)]*\)", "", text)
     text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
     text = re.sub(r"\S+\]\(https?://\S*$", "", text)
@@ -1015,7 +1016,7 @@ async def fetch_source_content(url: str) -> str:
                 parallel_response.raise_for_status()
                 parallel_result = (parallel_response.json().get("results") or [])[0]
             parallel_text = clean_preview_text((parallel_result.get("full_content") or "\n\n".join(parallel_result.get("excerpts") or [])).strip())
-            if parallel_text:
+            if parallel_text and not re.search(r"Expand user menu|Open settings menu|Skip to main content", parallel_text, re.IGNORECASE):
                 return parallel_text
 
         indexed = await search_web(url, limit=1, reddit_only=False)
