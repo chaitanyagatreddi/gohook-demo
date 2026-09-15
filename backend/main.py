@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
-from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar
+from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice
 from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -1317,6 +1317,24 @@ async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depen
         "subreddits": subreddits,
         "angles": angles,
     }
+
+
+class VoiceAnalyzeRequest(BaseModel):
+    text: str
+
+
+@app.post("/voice/analyze")
+async def voice_analyze(req: VoiceAnalyzeRequest, identity: Optional[dict] = Depends(get_current_identity)):
+    """Study a writing sample and show what GoHook learned. Nothing is saved and the text is never logged."""
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to set up your voice.")
+    try:
+        return await run_in_threadpool(analyze_voice, req.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        logger.exception("Voice analysis failed")
+        raise HTTPException(status_code=500, detail="Could not read your writing style. Please try again.")
 
 
 @app.post("/ideate/draft")
