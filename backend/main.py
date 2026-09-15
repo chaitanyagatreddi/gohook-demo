@@ -966,6 +966,14 @@ class RedditPostRequest(BaseModel):
 
 class RelevantThreadsRequest(BaseModel):
     topic: str
+    source_url: Optional[str] = None
+
+
+def clean_preview_text(text: str) -> str:
+    text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
+    text = re.sub(r"^\s*#+\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 async def fetch_source_content(url: str) -> str:
@@ -1002,7 +1010,7 @@ async def fetch_source_content(url: str) -> str:
                 )
                 parallel_response.raise_for_status()
                 parallel_result = (parallel_response.json().get("results") or [])[0]
-            parallel_text = (parallel_result.get("full_content") or "\n\n".join(parallel_result.get("excerpts") or [])).strip()
+            parallel_text = clean_preview_text((parallel_result.get("full_content") or "\n\n".join(parallel_result.get("excerpts") or [])).strip())
             if parallel_text:
                 return parallel_text
 
@@ -1025,7 +1033,7 @@ async def reddit_post(req: RedditPostRequest):
     if not req.post_url.strip():
         raise HTTPException(status_code=400, detail="Please enter a valid public URL")
     post = await fetch_source_content(req.post_url)
-    return {"post": post, "preview": post[:280]}
+    return {"post": post, "preview": clean_preview_text(post[:280])}
 
 
 @app.post("/relevant-threads")
@@ -1034,17 +1042,25 @@ async def relevant_threads(req: RelevantThreadsRequest):
         raise HTTPException(status_code=400, detail="A topic is required")
     try:
         results = await search_web(f"{req.topic[:300]} discussion", limit=8, reddit_only=True)
+        source = (req.source_url or "").split("?", 1)[0].rstrip("/").lower()
+        seen_titles: set[str] = set()
+        threads = []
+        for item in results:
+            url = item.get("url", "")
+            title = clean_preview_text(item.get("title", ""))
+            key = re.sub(r"[^a-z0-9]+", "", title.lower())
+            canonical_url = url.split("?", 1)[0].rstrip("/").lower()
+            if not title or not url or canonical_url == source or key in seen_titles:
+                continue
+            seen_titles.add(key)
+            threads.append({
+                "title": title,
+                "url": url,
+                "subreddit": item.get("subreddit_name_prefixed", ""),
+                "snippet": clean_preview_text(item.get("snippet", "")),
+            })
         return {
-            "threads": [
-                {
-                    "title": item.get("title", ""),
-                    "url": item.get("url", ""),
-                    "subreddit": item.get("subreddit_name_prefixed", ""),
-                    "snippet": item.get("snippet", ""),
-                }
-                for item in results
-                if item.get("url")
-            ]
+            "threads": threads
         }
     except Exception:
         logger.exception("Relevant Reddit thread search failed")

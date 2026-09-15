@@ -111,6 +111,19 @@ function renderAnswer(answer: string, sources: AskSource[]) {
 }
 
 type Draft = { draft: string; word_count: number; tone: string }
+function cleanSourceUrl(value: string) {
+  try {
+    const url = new URL(value.trim())
+    for (const key of [...url.searchParams.keys()]) {
+      if (key.toLowerCase().startsWith('utm_') || ['hubs_content', 'hubs_content-cta'].includes(key.toLowerCase())) {
+        url.searchParams.delete(key)
+      }
+    }
+    return url.toString()
+  } catch {
+    return value
+  }
+}
 type QuestionSource = { n: number; title: string; url: string; site?: string; date?: string; permalink?: string; subreddit_name_prefixed?: string; selftext?: string }
 type QuestionValidation = { checked: number; verified: number; communities: number; score: number; coverage: number; retried: boolean; passed: boolean; mode?: 'simple' | 'strict'; top_relevance?: number }
 type QuestionClaim = { text: string; sources: number[] }
@@ -968,6 +981,8 @@ export default function App() {
 
   async function fetchPost() {
     if (!postUrl.trim()) return
+    const cleanedUrl = cleanSourceUrl(postUrl)
+    setPostUrl(cleanedUrl)
     setFetchingPost(true)
     setPostFetched(false)
     setPostPreview('')
@@ -977,7 +992,7 @@ export default function App() {
       const res = await fetch(`${API}/reddit-post`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ post_url: postUrl }),
+        body: JSON.stringify({ post_url: cleanedUrl }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Could not fetch that post')
@@ -998,7 +1013,7 @@ export default function App() {
       const res = await fetch(`${API}/relevant-threads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: postPreview }),
+        body: JSON.stringify({ topic: postPreview, source_url: postUrl }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Could not find relevant threads')
@@ -2012,6 +2027,7 @@ export default function App() {
                     setPostPreview('')
                     setRelevantThreads([])
                   }}
+                  onBlur={() => setPostUrl(cleanSourceUrl(postUrl))}
                   placeholder="https://www.reddit.com/r/... or https://example.com/article"
                   className="mt-1 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
                 />

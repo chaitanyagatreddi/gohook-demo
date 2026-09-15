@@ -1,6 +1,7 @@
 import re
 import httpx
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -140,6 +141,10 @@ async def search_web(query: str, limit: int = 6, reddit_only: bool = False) -> l
 
     for item in data.get("organic", [])[:limit]:
         url = item.get("link", "")
+        if reddit_only:
+            host = (urlparse(url).hostname or "").lower()
+            if host not in {"reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com"}:
+                continue
         site = re.sub(r"^https?://(www\.)?", "", url).split("/")[0] if url else ""
         result = {
             "title": item.get("title", ""),
