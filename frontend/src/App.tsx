@@ -126,6 +126,15 @@ type QuestionCheck = { label: string; passed: boolean; detail: string }
 type QuestionRun = { passed: boolean; claims: QuestionClaim[]; attempts: { stage: string; passed: boolean; retried?: boolean }[]; checks: QuestionCheck[]; claim_fail_reasons?: string[] }
 type QuestionAnswer = { question: string; answer?: string; withheld?: boolean; sources?: QuestionSource[]; validation?: QuestionValidation; run?: QuestionRun; layer?: number; parentScore?: number; scoreDelta?: number }
 type QuestionMemory = QuestionAnswer & { saved_at?: string }
+
+const HELD_BACK_ANSWER = "I couldn't find enough relevant Reddit evidence to give a reliable answer to this question."
+
+/** Older saved answers predate the held-back flag, so fall back to the sentence itself. */
+function isWithheld(item?: { withheld?: boolean; answer?: string } | null): boolean {
+  if (!item) return false
+  return item.withheld ?? (item.answer ?? '').trim() === HELD_BACK_ANSWER
+}
+
 type QuestionStageKey = 'understand' | 'research' | 'filter' | 'validate' | 'refine' | 'answer' | 'correct'
 type QuestionStage = { state: 'idle' | 'active' | 'passed' | 'review'; detail: string }
 type QuestionProgress = { questionIndex: number; running: boolean; steps: Record<QuestionStageKey, QuestionStage> }
@@ -325,7 +334,7 @@ export default function App() {
         next.push({
           id,
           title: item.question,
-          text: item.withheld ? '' : item.answer ?? '',
+          text: isWithheld(item) ? '' : item.answer ?? '',
           source_url: item.sources?.[0]?.url ?? '',
           subreddit: item.sources?.length ? `${item.sources.length} sources` : 'batch question',
           reddit_score: 0,
@@ -1175,13 +1184,13 @@ export default function App() {
   }
 
   const reviewReason = (number: string) => {
-    if (number === '07') return questionWorkflowItem?.withheld ? 'Answer held back: not enough Reddit proof.' : questionRun && !questionRun.passed ? 'Answer shown with limited evidence.' : 'No correction needed'
+    if (number === '07') return isWithheld(questionWorkflowItem) ? 'Answer held back: not enough Reddit proof.' : questionRun && !questionRun.passed ? 'Answer shown with limited evidence.' : 'No correction needed'
     const code = stepFailureCode(number)
     return code ? failureLine(code) : questionWorkflowDisplaySteps.find(step => step.number === number)?.detail ?? ''
   }
 
   const reviewBar = (number: string) => {
-    if (number === '07') return questionWorkflowItem?.withheld ? 'The answer is held back until there is enough evidence to support it.' : 'The answer is shown with a Limited evidence tag.'
+    if (number === '07') return isWithheld(questionWorkflowItem) ? 'The answer is held back until there is enough evidence to support it.' : 'The answer is shown with a Limited evidence tag.'
     const code = stepFailureCode(number)
     return code ? failureWhy(code) : 'This step did not meet the bar returned by the backend.'
   }
@@ -1541,7 +1550,7 @@ export default function App() {
                     {questionMemory.map((item, index) => (
                       <article key={`${item.question}-${item.saved_at ?? index}`} className="rounded-xl border border-[#242a33] bg-[#0d0f13] p-4">
                         <h3 className="text-sm font-semibold text-[#e8eaed]">{item.question}</h3>
-                        {item.withheld ? <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2]">The answer is held back until there is enough evidence to support it.</p> : item.answer && <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
+                        {isWithheld(item) ? <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2]">The answer is held back until there is enough evidence to support it.</p> : item.answer && <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
                       </article>
                     ))}
                   </div>
@@ -1612,10 +1621,10 @@ export default function App() {
                       <span className="text-xs text-[#ff6a33] font-mono pt-1">L{item.layer ?? 1}</span>
                       <div className="min-w-0">
                         <h3 className="text-base font-semibold text-[#e8eaed] break-words">{item.question}</h3>
-                        {item.answer || item.withheld ? (
+                        {item.answer || isWithheld(item) ? (
                           <>
-                            {item.withheld ? <div className="mt-3 rounded-xl border border-dashed border-[#303640] bg-[#0d0f13] px-4 py-6 text-center text-sm text-[#9aa4b2]">The answer is held back until there is enough evidence to support it.</div> : item.answer && <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
-                            {!item.withheld && item.run && !item.run.passed && <span className="mt-3 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-300">Limited evidence</span>}
+                            {isWithheld(item) ? <div className="mt-3 rounded-xl border border-dashed border-[#303640] bg-[#0d0f13] px-4 py-6 text-center text-sm text-[#9aa4b2]">The answer is held back until there is enough evidence to support it.</div> : item.answer && <p className="mt-3 text-sm leading-relaxed text-[#9aa4b2] whitespace-pre-wrap">{renderAnswer(item.answer, (item.sources ?? []) as unknown as AskSource[])}</p>}
+                            {!isWithheld(item) && item.run && !item.run.passed && <span className="mt-3 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-300">Limited evidence</span>}
                             {scottActive && item.validation && (
                               <div className="mt-3 flex flex-wrap items-center gap-2">
                                 <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${item.validation.mode === 'simple' ? 'border-sky-300/30 bg-sky-300/10 text-sky-300' : item.validation.passed ? 'border-[#50c878]/30 bg-[#50c878]/10 text-[#50c878]' : 'border-amber-300/30 bg-amber-300/10 text-amber-300'}`}>
