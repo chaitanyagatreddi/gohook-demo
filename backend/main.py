@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice
-from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory
+from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -1321,6 +1321,52 @@ async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depen
 
 class VoiceAnalyzeRequest(BaseModel):
     text: str
+
+
+class VoiceSaveRequest(BaseModel):
+    style: dict
+    sample_count: int = 0
+    source: str = "paste"
+
+
+@app.get("/voice")
+async def voice_get(identity: Optional[dict] = Depends(get_current_identity)):
+    """The signed-in person's saved writing style, or none."""
+    if not identity:
+        return {"voice": None}
+    try:
+        return {"voice": await read_voice_profile(identity["id"])}
+    except Exception:
+        logger.exception("Could not read the voice profile")
+        raise HTTPException(status_code=502, detail="Could not load your voice. Please try again.")
+
+
+@app.post("/voice")
+async def voice_save(req: VoiceSaveRequest, identity: Optional[dict] = Depends(get_current_identity)):
+    """Save the style summary from /voice/analyze. The original writing is never stored."""
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to save your voice.")
+    if not isinstance(req.style, dict) or not any(str(value).strip() for value in req.style.values()):
+        raise HTTPException(status_code=400, detail="Run the writing check first, then save.")
+    try:
+        saved = await save_voice_profile(identity["id"], req.style, max(0, req.sample_count), req.source)
+        return {"saved": True, "voice": saved}
+    except Exception:
+        logger.exception("Could not save the voice profile")
+        raise HTTPException(status_code=502, detail="Could not save your voice. Please try again.")
+
+
+@app.delete("/voice")
+async def voice_delete(identity: Optional[dict] = Depends(get_current_identity)):
+    """Forget the saved style."""
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to manage your voice.")
+    try:
+        await delete_voice_profile(identity["id"])
+        return {"deleted": True}
+    except Exception:
+        logger.exception("Could not delete the voice profile")
+        raise HTTPException(status_code=502, detail="Could not delete your voice. Please try again.")
 
 
 @app.post("/voice/analyze")

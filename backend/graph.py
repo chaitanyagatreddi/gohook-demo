@@ -10,6 +10,7 @@ No model calls in this file. Topic extraction lives in topics.py.
 import os
 import re
 from typing import Optional
+from datetime import datetime, timezone
 
 import httpx
 from dotenv import load_dotenv
@@ -405,3 +406,52 @@ async def read_graph(user_id: Optional[str], limit: int = 300) -> dict:
     ]
 
     return {"nodes": nodes, "edges": edges}
+
+
+async def read_voice_profile(user_id: Optional[str]) -> Optional[dict]:
+    """The person's saved writing style, or None when they haven't set one up."""
+    if not user_id:
+        return None
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/voice_profiles",
+            headers=_headers(),
+            params={"user_id": f"eq.{user_id}", "select": "style,sample_count,source,updated_at", "limit": 1},
+            timeout=15,
+        )
+        res.raise_for_status()
+        rows = res.json()
+    return rows[0] if rows else None
+
+
+async def save_voice_profile(user_id: str, style: dict, sample_count: int, source: str) -> dict:
+    """Store the style summary only. The writing someone pastes is never saved."""
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{SUPABASE_URL}/rest/v1/voice_profiles",
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+            params={"on_conflict": "user_id"},
+            json=[{
+                "user_id": user_id,
+                "style": style,
+                "sample_count": sample_count,
+                "source": source if source in ("paste", "reddit") else "paste",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }],
+            timeout=15,
+        )
+        res.raise_for_status()
+        rows = res.json()
+    return rows[0] if rows else {}
+
+
+async def delete_voice_profile(user_id: str) -> None:
+    """Remove the saved style completely."""
+    async with httpx.AsyncClient() as client:
+        res = await client.delete(
+            f"{SUPABASE_URL}/rest/v1/voice_profiles",
+            headers=_headers(),
+            params={"user_id": f"eq.{user_id}"},
+            timeout=15,
+        )
+        res.raise_for_status()
