@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from './supabaseClient'
+import { authHeaders } from './supabaseClient'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -123,10 +123,6 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
   const [redditBusy, setRedditBusy] = useState<'connecting' | 'syncing' | null>(null)
   const [redditNote, setRedditNote] = useState('')
 
-  async function authHeaders(): Promise<Record<string, string>> {
-    const { data } = await supabase.auth.getSession()
-    return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {}
-  }
 
   // Ask the backend whether this person's Reddit is connected.
   async function checkReddit() {
@@ -182,11 +178,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
     let cancelled = false
     ;(async () => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession()
-        const headers: Record<string, string> = sessionData.session
-          ? { Authorization: `Bearer ${sessionData.session.access_token}` }
-          : {}
-        const res = await fetch(`${API}/graph`, { headers })
+        const res = await fetch(`${API}/graph`, { headers: await authHeaders() })
         if (!res.ok) throw new Error(String(res.status))
         const json = (await res.json()) as GraphData
         if (!cancelled) setData(json)

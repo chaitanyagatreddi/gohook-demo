@@ -4,10 +4,9 @@ import { upsertReplyCard } from './boardUpsert'
 import VoiceSetup from './VoiceSetup'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
-import { supabase } from './supabaseClient'
+import { supabase, authHeaders } from './supabaseClient'
 import type { Session } from '@supabase/supabase-js'
 import OnboardingDeck from './OnboardingDeck'
-import LoadingScreen from './LoadingScreen'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -33,14 +32,6 @@ type Intel = {
 }
 
 type Tab = 'pricing' | 'complaints' | 'comparisons' | 'praise' | 'quotes'
-
-const TAB_LABELS: Record<Tab, string> = {
-  pricing: '💰 Pricing',
-  complaints: '😤 Complaints',
-  comparisons: '⚖️ Comparisons',
-  praise: '💚 Praise',
-  quotes: '💬 Quotes',
-}
 
 function ResultCard({ item, onReply, onAdd, added }: { item: ResultItem; onReply?: (item: ResultItem) => void; onAdd?: (item: ResultItem) => void; added?: boolean }) {
   return (
@@ -731,10 +722,6 @@ export default function App() {
     if (!enabled) setQuestionProgress(null)
   }
 
-  async function authHeaders(): Promise<Record<string, string>> {
-    const { data } = await supabase.auth.getSession()
-    return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {}
-  }
 
   async function sendMagicLink() {
     if (!authEmail.trim()) return
@@ -841,7 +828,6 @@ export default function App() {
     return raw ? parseInt(raw, 10) || 0 : 0
   })
   const [showAuthGate, setShowAuthGate] = useState(false)
-  const [gateLoading, setGateLoading] = useState(true)
 
   async function askReddit(question: string, prior: AskTurn[]): Promise<AskTurn> {
     const history = prior.flatMap(t => [
@@ -1269,26 +1255,15 @@ export default function App() {
       <main className="flex-1 min-w-0 pb-16 md:pb-0">
       {showAuthGate && !session ? (
         <div className="max-w-3xl mx-auto px-4 py-10">
-          {gateLoading ? (
-            <LoadingScreen onDone={() => setGateLoading(false)} />
-          ) : (
           <OnboardingDeck
-            signInOnly
             authEmail={authEmail}
             setAuthEmail={setAuthEmail}
             authSent={authSent}
             authError={authError}
             sendMagicLink={sendMagicLink}
             session={!!session}
-            zernioKeyInput={zernioKeyInput}
-            setZernioKeyInput={setZernioKeyInput}
-            zernioConnecting={zernioConnecting}
-            zernioError={zernioError}
-            zernioConnected={zernioConnected}
-            connectZernio={connectZernio}
             onDone={() => setShowAuthGate(false)}
           />
-          )}
         </div>
       ) : view === 'ideate' ? (
         <div>
@@ -1302,7 +1277,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          {ideateTab === 'url' ? <IdeateWireframe embedded /> : (
+          {ideateTab === 'url' ? <IdeateWireframe /> : (
           <div className="max-w-3xl mx-auto px-4 py-6">
               <div>
                 <div className="flex items-center justify-between">
@@ -2107,7 +2082,7 @@ export default function App() {
 
             {/* Active tab heading */}
             <h3 className="text-sm font-semibold text-[#9aa4b2] mb-3">
-              {TAB_LABELS[activeTab]} <span className="text-[#6b7280]">· {intel[activeTab].length}</span>
+              {TAB_META[activeTab].icon} {TAB_META[activeTab].label} <span className="text-[#6b7280]">· {intel[activeTab].length}</span>
             </h3>
 
             {/* Results */}

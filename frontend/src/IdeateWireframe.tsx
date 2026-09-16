@@ -31,16 +31,8 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return data as T
 }
 
-function Step({ number, label, active, complete }: { number: string; label: string; active?: boolean; complete?: boolean }) {
-  return (
-    <div className={`iw-step ${active ? 'iw-step-active' : ''} ${complete ? 'iw-step-complete' : ''}`}>
-      <span>{complete ? '✓' : number}</span>
-      <p>{label}</p>
-    </div>
-  )
-}
 
-export default function IdeateWireframe({ embedded = false }: { embedded?: boolean }) {
+export default function IdeateWireframe() {
   const [stage, setStage] = useState<Stage>('source')
   const [url, setUrl] = useState('')
   const [takeaway, setTakeaway] = useState('')
@@ -92,27 +84,7 @@ export default function IdeateWireframe({ embedded = false }: { embedded?: boole
   const reset = () => { setStage('source'); setIdeas(null); setDraft(null); setError('') }
 
   return (
-    <div className={embedded ? 'iw-embedded' : 'iw-shell'}>
-      {!embedded && <aside className="iw-sidebar">
-        <div>
-          <div className="iw-brand"><span>⌘</span> GoHook</div>
-          <p>Your knowledge graph for Reddit.</p>
-        </div>
-        <nav className="iw-nav" aria-label="Product navigation">
-          <span>⌕ <b>Home</b></span>
-          <span>◎ <b>Research</b></span>
-          <span>▥ <b>Board</b></span>
-          <span className="iw-nav-active">↗ <b>Ideate</b></span>
-          <span>☍ <b>Questions</b></span>
-          <span>⌘ <b>Graph</b></span>
-        </nav>
-        <div className="iw-progress">
-          <Step number="1" label="Add link" active={stage === 'source'} complete={stage !== 'source'} />
-          <Step number="2" label="Pick an idea" active={stage === 'angles'} complete={stage === 'draft'} />
-          <Step number="3" label="Edit the draft" active={stage === 'draft'} />
-        </div>
-        <button className="iw-back" onClick={reset}>← Back to start</button>
-      </aside>}
+    <div className="iw-embedded">
 
       <main className="iw-main">
         <header className="iw-header">

@@ -4,9 +4,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
-from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
+from crawler import crawl_reddit, search_many, search_web, verified_reddit_threads
 from extractors import extract_intel
-from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
+from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
 from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -19,7 +19,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-COMPARISON_PATTERN = re.compile(r"\bvs\.?\b|\bversus\b", re.IGNORECASE)
 
 ZERNIO_API_KEY = os.getenv("ZERNIO_API_KEY")
 ZERNIO_REDDIT_ACCOUNT_ID = os.getenv("ZERNIO_REDDIT_ACCOUNT_ID")
@@ -28,9 +27,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 PARALLEL_API_KEY = os.getenv("PARALLEL_API_KEY")
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 SCOTT_ACCESS_EMAILS = {
     email.strip().lower()
     for email in os.getenv("SCOTT_ACCESS_EMAILS", "").split(",")
@@ -46,51 +43,6 @@ SCOTT_ADMIN_EMAILS = {
     for email in os.getenv("SCOTT_ADMIN_EMAILS", "").split(",")
     if email.strip()
 }
-
-ONBOARDING_EMAIL_HTML = """
-<p>Hey {name} \U0001F44B,</p>
-<p>Welcome to <strong>Redditscan</strong> — Reddit, but focus mode: pricing, complaints, comparisons, no noise.</p>
-<p><strong>Here's what you can do:</strong></p>
-<ul>
-  <li>\U0001F50D Search any comparison ("Notion vs Asana", "Linear vs Jira"...)</li>
-  <li>\U0001F4B0 Get pricing, complaints, comparisons, and praise — ranked, sourced</li>
-  <li>✍️ Draft a Reddit-style post or comment that sounds human</li>
-  <li>\U0001F4C5 Schedule straight to Reddit via Zernio</li>
-</ul>
-<p>Just enter a comparison and hit <strong>Scan</strong>. Results in seconds. ⚡</p>
-<p>
-  <a href="https://redditscan.vercel.app"
-     style="display:inline-block;background-color:#ff4500;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">
-    Open Redditscan &rarr;
-  </a>
-</p>
-<p>&mdash; Chaitanya</p>
-"""
-
-
-async def send_onboarding_email(to_email: str):
-    if not RESEND_API_KEY:
-        logger.error("RESEND_API_KEY not set, skipping onboarding email")
-        return
-    name = to_email.split("@")[0]
-    async with httpx.AsyncClient() as client:
-        res = await client.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "from": "Redditscan <onboarding@resend.dev>",
-                "to": [to_email],
-                "subject": "Welcome to Redditscan — You're In!",
-                "html": ONBOARDING_EMAIL_HTML.format(name=name),
-            },
-            timeout=10,
-        )
-    if res.status_code >= 400:
-        logger.error(f"Resend send failed: {res.status_code} {res.text[:500]}")
-
 
 async def get_current_identity(authorization: Optional[str] = Header(None)):
     """Return the signed-in Supabase identity, or None when signed out."""
@@ -502,19 +454,6 @@ async def graph(user_id: Optional[str] = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Could not load your graph. Please try again.")
 
 
-@app.post("/webhooks/new-user")
-async def new_user_webhook(payload: dict, x_webhook_secret: Optional[str] = Header(None)):
-    if not WEBHOOK_SECRET or x_webhook_secret != WEBHOOK_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    email = payload.get("record", {}).get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="No email in payload")
-
-    await send_onboarding_email(email)
-    return {"sent": True}
-
-
 @app.post("/search")
 async def search(req: SearchRequest):
     if not req.query.strip():
@@ -605,10 +544,6 @@ class DraftRequest(BaseModel):
     use_voice: bool = True
 
 
-class QuestionBatchRequest(BaseModel):
-    brief: str
-
-
 class QuestionAnswerRequest(BaseModel):
     brief: str = ""
     question: str
@@ -649,62 +584,6 @@ async def save_question_prompt(
             logger.exception("Could not save question prompt")
             raise HTTPException(status_code=502, detail="Could not save question memory.")
     return {"saved": bool(identity)}
-
-
-@app.post("/question-batch")
-def question_batch(req: QuestionBatchRequest):
-    if not req.brief.strip():
-        raise HTTPException(status_code=400, detail="Brief cannot be empty")
-    try:
-        return generate_question_batch(req.brief)
-    except Exception:
-        logger.exception("Question batch generation failed")
-        raise HTTPException(status_code=500, detail="Question batch generation failed. Please try again.")
-
-
-@app.post("/question-answer")
-async def question_answer(
-    req: QuestionAnswerRequest,
-    identity: Optional[dict] = Depends(get_current_identity),
-):
-    if not req.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty")
-
-    try:
-        prompt = await run_in_threadpool(expand_short_question, req.question)
-        research_question = prompt["research_question"]
-    except Exception:
-        logger.exception("Short prompt expansion failed; using the original question")
-        research_question = req.question.strip()
-
-    # Look it up first, so the answer comes from sources rather than memory.
-    # If the search fails we still answer, but the reply says it is unsourced.
-    results, validation = [], {"checked": 0, "verified": 0, "communities": 0, "retried": False, "passed": False}
-    try:
-        results, validation = await research_reddit_with_review(research_question)
-    except Exception:
-        logger.exception("Web search failed, answering without sources")
-
-    try:
-        answer = await run_in_threadpool(generate_question_answer, req.brief, research_question, results)
-        answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
-        attempts = [{"stage": "research", "passed": validation["passed"], "retried": validation["retried"]}, {"stage": "answer", "passed": answer_review["passed"]}]
-        if results and not answer_review["passed"]:
-            feedback = "Each factual claim needs valid source IDs and every source ID must appear as a matching [S1] citation."
-            answer = await run_in_threadpool(generate_question_answer, req.brief, research_question, results, feedback)
-            answer_review = validate_question_answer(answer["answer"], answer.get("claims", []), len(results))
-            attempts.append({"stage": "answer correction", "passed": answer_review["passed"]})
-        answer["validation"] = validation
-        answer["run"] = {"passed": validation["passed"] and answer_review["passed"], "claims": answer_review["claims"], "attempts": attempts}
-        if identity:
-            try:
-                await save_question_memory(identity["id"], req.question, answer)
-            except Exception:
-                logger.exception("Could not save question memory")
-        return answer if await has_scott_access(identity) else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
-    except Exception:
-        logger.exception("Question answer generation failed")
-        raise HTTPException(status_code=500, detail="Answer generation failed. Please try again.")
 
 
 @app.post("/question-follow-up")

@@ -77,15 +77,6 @@ Rules:
 Output ONLY the comment body. No preamble, no markdown."""
 
 
-QUESTION_BATCH_SYSTEM_PROMPT = """Turn a short research brief into exactly five useful questions.
-
-Rules:
-- Each question must explore a different angle of the brief
-- Questions must be specific, natural, and answerable
-
-Return valid JSON only in this shape:
-{"questions":["..."]}"""
-
 QUESTION_ANSWER_SYSTEM_PROMPT = """Answer the supplied question properly, in about 5 to 6 lines.
 
 Shape:
@@ -176,25 +167,6 @@ def draft_comment(post: str, intent: str, voice: Optional[dict] = None) -> dict:
         "word_count": len(draft.split()),
         "tone": detect_tone(draft),
     }
-
-
-def generate_question_batch(brief: str) -> dict:
-    """Generate five distinct questions from a short brief."""
-    resp = get_client().chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": QUESTION_BATCH_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Brief:\n{brief.strip()}"},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.55,
-        max_tokens=1200,
-    )
-    payload = json.loads(resp.choices[0].message.content)
-    questions = payload.get("questions", [])
-    if len(questions) != 5 or any(not isinstance(question, str) or not question.strip() for question in questions):
-        raise ValueError("Question batch response was incomplete")
-    return {"questions": questions}
 
 
 def expand_short_question(question: str) -> dict:

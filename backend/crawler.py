@@ -181,22 +181,3 @@ def verified_reddit_threads(results: list[dict]) -> list[dict]:
     return threads
 
 
-async def research_reddit_with_review(question: str, limit: int = 6) -> tuple[list[dict], dict]:
-    """Research Reddit, then make one focused retry if the evidence is incomplete."""
-    initial = await search_web(question, limit=limit, reddit_only=True)
-    threads = verified_reddit_threads(initial)
-    communities = {t["subreddit_name_prefixed"] for t in threads}
-    retried = len(threads) < 3 or len(communities) < 2
-
-    if retried:
-        retry = await search_web(f"{question} experience discussion", limit=limit, reddit_only=True)
-        threads = verified_reddit_threads(initial + retry)
-        communities = {t["subreddit_name_prefixed"] for t in threads}
-
-    return threads[:limit], {
-        "checked": len(initial) + (limit if retried else 0),
-        "verified": len(threads[:limit]),
-        "communities": len(communities),
-        "retried": retried,
-        "passed": len(threads) >= 3 and len(communities) >= 2,
-    }
