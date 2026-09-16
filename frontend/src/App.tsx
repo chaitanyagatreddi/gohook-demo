@@ -1521,8 +1521,8 @@ export default function App() {
             <div className="min-w-0">
             <div className="border-b border-[#242a33] pb-6">
               <div>
-                <h2 className="text-3xl font-bold tracking-tight">Batch questions</h2>
-                <p className="text-sm text-[#9aa4b2] mt-2">Enter 1 to 3 questions, one per line. Generate each answer individually.</p>
+                <h2 className="text-3xl font-bold tracking-tight">Research</h2>
+                <p className="text-sm text-[#9aa4b2] mt-2">Ask up to 3 questions, one per line. Each answer is built only from Reddit threads, and held back when the evidence is thin.</p>
               </div>
               <button
                 onClick={() => setQuestionMemoryOpen(open => !open)}
