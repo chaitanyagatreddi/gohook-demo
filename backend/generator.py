@@ -639,7 +639,7 @@ def _link_sentence(text: str, choice: str) -> str:
     }.get(choice.lower(), "No link in the post.")
 
 
-def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_threads: List[str]) -> dict:
+def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_threads: List[str], voice: Optional[dict] = None) -> dict:
     user = (
         f"Chosen idea:\n{json.dumps(angle, ensure_ascii=False)}\n\n"
         f"Author's takeaway: {takeaway.strip() or '(not given)'}\n\n"
@@ -650,7 +650,7 @@ def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_th
     resp = get_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": IDEATE_DRAFT_SYSTEM_PROMPT},
+            {"role": "system", "content": IDEATE_DRAFT_SYSTEM_PROMPT + _voice_style_prompt(voice or {})},
             {"role": "user", "content": user},
         ],
         response_format={"type": "json_object"},
@@ -667,6 +667,7 @@ def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_th
         "word_count": len(draft.split()),
         "tone": detect_tone(draft),
         "link_placement": _link_sentence((data.get("link_placement") or "").strip(), str(angle.get("include_link", "no link"))),
+        "voiced": bool(voice),
     }
 
 

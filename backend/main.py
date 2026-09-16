@@ -1253,6 +1253,7 @@ class IdeateDraftRequest(BaseModel):
     angle: dict
     takeaway: str = ""
     example_threads: List[str] = []
+    use_voice: bool = True
 
 
 async def find_discussing_subreddits(topic: str, source_url: str = "") -> list[dict]:
@@ -1323,6 +1324,19 @@ class VoiceAnalyzeRequest(BaseModel):
     text: str
 
 
+async def _voice_for(user_id: Optional[str]) -> Optional[dict]:
+    """The person's saved style, or None. A lookup problem must never stop a draft."""
+    if not user_id:
+        return None
+    try:
+        saved = await read_voice_profile(user_id)
+    except Exception:
+        logger.exception("Could not read the voice profile for drafting")
+        return None
+    style = (saved or {}).get("style")
+    return style if isinstance(style, dict) and style else None
+
+
 class VoiceSaveRequest(BaseModel):
     style: dict
     sample_count: int = 0
@@ -1388,8 +1402,9 @@ async def ideate_draft(req: IdeateDraftRequest, user_id: Optional[str] = Depends
     if not req.url.strip() or not (req.angle or {}).get("title"):
         raise HTTPException(status_code=400, detail="A link and a chosen idea are required")
     page_text = await fetch_source_content(req.url, user_id)
+    voice = await _voice_for(user_id) if req.use_voice else None
     try:
-        return await run_in_threadpool(draft_post_from_angle, page_text, req.angle, req.takeaway, req.example_threads)
+        return await run_in_threadpool(draft_post_from_angle, page_text, req.angle, req.takeaway, req.example_threads, voice)
     except Exception:
         logger.exception("Ideate draft failed")
         raise HTTPException(status_code=500, detail="Could not write the draft. Please try again.")
