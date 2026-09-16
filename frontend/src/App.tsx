@@ -210,6 +210,7 @@ export default function App() {
   const [followUp, setFollowUp] = useState('')
 
   function addQuestionToBoard(turn: AskTurn) {
+    void track('board_add', true, { from: 'question' })
     const id = `ask::${turn.question}::${turn.answer.slice(0, 40)}`
     tellGraphSaved(turn.sources.map(src => ({
       title: src.title,
@@ -234,6 +235,7 @@ export default function App() {
   }
 
   function addToBoard(item: ResultItem, origin: string) {
+    void track('board_add', true, { from: origin })
     const id = `${item.source_url}::${item.text.slice(0, 40)}`
     tellGraphSaved([{
       title: item.text.slice(0, 120),
@@ -792,6 +794,7 @@ export default function App() {
 
   function addReplyToBoard() {
     if (!comment?.draft || !postUrl.trim()) return
+    void track('board_add', true, { from: 'reply' })
     const result = upsertReplyCard(board, { url: cleanSourceUrl(postUrl), draft: comment.draft, preview: postPreview })
     setBoard(() => result.board)
     if (result.action === 'added') {
@@ -838,6 +841,17 @@ export default function App() {
     return raw ? parseInt(raw, 10) || 0 : 0
   })
   const [showAuthGate, setShowAuthGate] = useState(false)
+
+  /** Tell the backend what happened here. Never let it get in the way. */
+  async function track(event: string, ok = true, meta: Record<string, unknown> = {}) {
+    try {
+      await fetch(`${API}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ event, ok, meta }),
+      })
+    } catch { /* logging must never break the thing being logged */ }
+  }
 
   async function askReddit(question: string, prior: AskTurn[]): Promise<AskTurn> {
     const history = prior.flatMap(t => [
@@ -900,6 +914,7 @@ export default function App() {
         }
         setIntel(await res.json())
       }
+      void track('scan', true, { expand, freshness })
       window.history.replaceState({}, '', `?q=${encodeURIComponent(q)}`)
       if (!session) {
         setSearchCount(prev => {
@@ -910,6 +925,7 @@ export default function App() {
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
+      void track('scan', false, { why: e instanceof Error ? e.message.slice(0, 120) : 'unknown' })
     } finally {
       setLoading(false)
     }
