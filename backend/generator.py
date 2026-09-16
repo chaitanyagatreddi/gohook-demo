@@ -117,7 +117,7 @@ Rules:
 - Keep the result to one natural question."""
 
 
-def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: str = "reddit") -> dict:
+def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: str = "reddit", voice: Optional[dict] = None) -> dict:
     """
     idea: 2-line user input (what they want to say)
     context_snippets: optional list of related Reddit quotes for tone matching
@@ -137,7 +137,7 @@ def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: s
     resp = get_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": system + _voice_style_prompt(voice or {})},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.8,
@@ -146,10 +146,10 @@ def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: s
     draft = resp.choices[0].message.content.strip()
     word_count = len(draft.split())
     tone = detect_tone(draft)
-    return {"draft": draft, "word_count": word_count, "tone": tone}
+    return {"draft": draft, "word_count": word_count, "tone": tone, "voiced": bool(voice)}
 
 
-def draft_comment(post: str, intent: str) -> dict:
+def draft_comment(post: str, intent: str, voice: Optional[dict] = None) -> dict:
     """
     post: the Reddit post text the user is replying to
     intent: 1-2 lines describing what the user wants to say
@@ -163,7 +163,7 @@ def draft_comment(post: str, intent: str) -> dict:
     resp = get_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": COMMENT_SYSTEM_PROMPT},
+            {"role": "system", "content": COMMENT_SYSTEM_PROMPT + _voice_style_prompt(voice or {})},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.8,
@@ -171,6 +171,7 @@ def draft_comment(post: str, intent: str) -> dict:
     )
     draft = resp.choices[0].message.content.strip()
     return {
+        "voiced": bool(voice),
         "draft": draft,
         "word_count": len(draft.split()),
         "tone": detect_tone(draft),

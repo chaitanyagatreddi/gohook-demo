@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, research_reddit_with_review, verified_reddit_threads
 from extractors import extract_intel
-from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice
+from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_batch, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
 from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
@@ -602,6 +602,7 @@ class DraftRequest(BaseModel):
     idea: str
     context_snippets: Optional[List[str]] = None
     style: str = "reddit"  # "reddit" | "hn" | "pg"
+    use_voice: bool = True
 
 
 class QuestionBatchRequest(BaseModel):
@@ -969,11 +970,12 @@ async def question_answer_stream(
 
 
 @app.post("/draft")
-def draft(req: DraftRequest):
+async def draft(req: DraftRequest, user_id: Optional[str] = Depends(get_current_user)):
     if not req.idea.strip():
         raise HTTPException(status_code=400, detail="Idea cannot be empty")
     try:
-        return draft_post(req.idea, req.context_snippets, style=req.style)
+        voice = await _voice_for(user_id) if req.use_voice else None
+        return await run_in_threadpool(draft_post, req.idea, req.context_snippets, req.style, voice)
     except Exception:
         logger.exception("Draft generation failed")
         raise HTTPException(status_code=500, detail="Draft generation failed. Please try again.")
@@ -983,6 +985,7 @@ class CommentRequest(BaseModel):
     post: str = ""  # legacy: the Reddit post text
     post_url: Optional[str] = None
     intent: str  # what the user wants to say
+    use_voice: bool = True
 
 
 class RedditPostRequest(BaseModel):
@@ -1383,6 +1386,36 @@ async def voice_delete(identity: Optional[dict] = Depends(get_current_identity))
         raise HTTPException(status_code=502, detail="Could not delete your voice. Please try again.")
 
 
+@app.post("/voice/from-reddit")
+async def voice_from_reddit(identity: Optional[dict] = Depends(get_current_identity)):
+    """Read the person's own Reddit writing and show the style it suggests. Saves nothing."""
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to use your Reddit writing.")
+    saved = await composio_reddit.read_connection(identity["id"])
+    if not saved or saved.get("status") != "active" or not saved.get("reddit_username"):
+        raise HTTPException(status_code=400, detail="Connect Reddit first, then we can read your own writing.")
+    try:
+        posts = await composio_reddit.get_own_posts(identity["id"], saved["reddit_username"])
+    except Exception:
+        logger.exception("Could not read this person's Reddit writing")
+        raise HTTPException(status_code=502, detail="Could not read your Reddit writing. Please try again.")
+    # Their own words only: skip NSFW, and titles alone are too short to judge a style.
+    parts = [str(post.get("selftext") or "").strip() for post in posts if not post.get("over_18")]
+    sample = "\n\n".join(part for part in parts if len(part.split()) >= 15)
+    if len(sample.split()) < VOICE_MIN_WORDS:
+        raise HTTPException(status_code=400, detail="Your Reddit posts are too short to read a style from. Paste a few lines instead.")
+    try:
+        result = await run_in_threadpool(analyze_voice, sample)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        logger.exception("Voice analysis from Reddit failed")
+        raise HTTPException(status_code=500, detail="Could not read your writing style. Please try again.")
+    result["source"] = "reddit"
+    result["posts_used"] = len([part for part in parts if len(part.split()) >= 15])
+    return result
+
+
 @app.post("/voice/analyze")
 async def voice_analyze(req: VoiceAnalyzeRequest, identity: Optional[dict] = Depends(get_current_identity)):
     """Study a writing sample and show what GoHook learned. Nothing is saved and the text is never logged."""
@@ -1416,7 +1449,8 @@ async def comment(req: CommentRequest, user_id: Optional[str] = Depends(get_curr
         raise HTTPException(status_code=400, detail="Reddit post URL and intent cannot be empty")
     try:
         post = await fetch_source_content(req.post_url, user_id) if req.post_url else req.post
-        return await run_in_threadpool(draft_comment, post, req.intent)
+        voice = await _voice_for(user_id) if req.use_voice else None
+        return await run_in_threadpool(draft_comment, post, req.intent, voice)
     except HTTPException:
         raise
     except Exception:
