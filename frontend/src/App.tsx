@@ -544,6 +544,7 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [zernioConnected, setZernioConnected] = useState(false)
   const [voiceReady, setVoiceReady] = useState(false)
+  const [onTeam, setOnTeam] = useState(false)
   const [redditConnected, setRedditConnected] = useState(false)
 
   // Whether this person has a saved writing voice, and a connected Reddit account.
@@ -562,6 +563,10 @@ export default function App() {
         const data = res.ok ? await res.json() : {}
         if (live) setRedditConnected(Boolean(data.connected ?? data.status === 'active'))
       } catch { /* leave it off */ }
+      try {
+        const res = await fetch(`${API}/admin/team`, { headers })
+        if (live) setOnTeam(res.ok)
+      } catch { /* not on the team */ }
     })()
     return () => { live = false }
   }, [session])
@@ -1243,7 +1248,7 @@ export default function App() {
               { key: 'graph', label: 'Graph', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="12" cy="17" r="2.5" /><path d="M8 7.5l8 -0.5M7.2 8.2L11 14.8M16.8 9.2L13 14.8" /></> },
               { key: 'usage', label: 'Usage', owner: true, icon: <><path d="M4 19V10" /><path d="M10 19V5" /><path d="M16 19v-6" /><path d="M21 19H3" /></> },
               { key: 'settings', label: 'Settings', icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></> },
-            ] as const).filter(item => !('owner' in item && item.owner) || scottAdminVisible).map(item => (
+            ] as const).filter(item => !('owner' in item && item.owner) || onTeam).map(item => (
               <button
                 key={item.key}
                 onClick={() => setView(item.key)}

@@ -5,7 +5,8 @@ type EventRow = { user_id: string | null; event: string; ok: boolean; meta: Reco
 type UserRow = { id: string; email: string; created_at?: string; last_sign_in_at?: string }
 type RedditRow = { user_id: string; reddit_username?: string; status?: string; meta?: { karma?: number }; last_synced_at?: string }
 type VoiceRow = { user_id: string; source?: string; sample_count?: number }
-type Usage = { rows: EventRow[]; users: UserRow[]; days: number; reddit: RedditRow[]; voices: VoiceRow[] }
+type Member = { email: string; role: string; added_by?: string }
+type Usage = { rows: EventRow[]; users: UserRow[]; days: number; reddit: RedditRow[]; voices: VoiceRow[]; role?: string }
 
 const LABELS: Record<string, string> = {
   scan: 'Scans',
@@ -32,6 +33,47 @@ export default function AdminUsage({ api }: { api: string }) {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [error, setError] = useState('')
   const [days, setDays] = useState(30)
+  const [team, setTeam] = useState<Member[]>([])
+  const [teamEmail, setTeamEmail] = useState('')
+  const [teamError, setTeamError] = useState('')
+
+  async function loadTeam() {
+    try {
+      const res = await fetch(`${api}/admin/team`, { headers: await authHeaders() })
+      const data = await res.json()
+      if (res.ok) setTeam(data.members ?? [])
+    } catch { /* the rest of the page still works */ }
+  }
+
+  useEffect(() => { void loadTeam() }, [api])
+
+  async function addMember() {
+    setTeamError('')
+    try {
+      const res = await fetch(`${api}/admin/team`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ email: teamEmail, role: 'admin' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Could not add them.')
+      setTeamEmail('')
+      await loadTeam()
+    } catch (e) {
+      setTeamError(e instanceof Error ? e.message : 'Could not add them.')
+    }
+  }
+
+  async function removeMember(email: string) {
+    setTeamError('')
+    try {
+      const res = await fetch(`${api}/admin/team/${encodeURIComponent(email)}`, { method: 'DELETE', headers: await authHeaders() })
+      if (!res.ok) throw new Error((await res.json()).detail || 'Could not remove them.')
+      await loadTeam()
+    } catch (e) {
+      setTeamError(e instanceof Error ? e.message : 'Could not remove them.')
+    }
+  }
 
   useEffect(() => {
     let live = true
@@ -153,6 +195,45 @@ export default function AdminUsage({ api }: { api: string }) {
           </ul>
         </div>
       )}
+
+      <div className="rounded-xl border border-[#242a33] bg-[#14171c] p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] uppercase tracking-[0.08em] text-[#858b95]">Team</p>
+          <span className="text-[11px] text-[#6b7280]">owners see everything and manage the team · admins can view</span>
+        </div>
+        <table className="mt-3 w-full text-sm">
+          <tbody>
+            {team.map(member => (
+              <tr key={member.email} className="border-t border-[#242a33] first:border-0">
+                <td className="py-2 text-[#e8eaed]">{member.email}</td>
+                <td className="py-2 text-right">
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${member.role === 'owner' ? 'bg-[#ff4500]/15 text-[#ff6a33]' : 'bg-[#242a33] text-[#9aa4b2]'}`}>{member.role}</span>
+                </td>
+                <td className="py-2 text-right">
+                  {usage.role === 'owner' && member.added_by !== 'settings' && (
+                    <button onClick={() => removeMember(member.email)} className="text-[11px] text-[#6b7280] hover:text-red-400">Remove</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {usage.role === 'owner' && (
+          <div className="mt-3 flex gap-2">
+            <input
+              type="email"
+              value={teamEmail}
+              onChange={e => setTeamEmail(e.target.value)}
+              placeholder="teammate@email.com"
+              className="flex-1 rounded-lg border border-[#242a33] bg-[#0b0d10] px-3 py-2 text-xs text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+            />
+            <button onClick={addMember} disabled={!teamEmail.trim()} className="rounded-lg bg-[#ff4500] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#ff6a33] disabled:opacity-40">
+              Add as admin
+            </button>
+          </div>
+        )}
+        {teamError && <p className="mt-2 text-xs text-red-400">{teamError}</p>}
+      </div>
 
       <div className="rounded-xl border border-[#242a33] bg-[#14171c] p-4">
         <p className="text-[11px] uppercase tracking-[0.08em] text-[#858b95]">People</p>

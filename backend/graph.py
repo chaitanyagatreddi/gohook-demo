@@ -505,3 +505,41 @@ async def read_usage(days: int = 30) -> dict:
         "reddit": reddit.json() if reddit.status_code == 200 else [],
         "voices": voices.json() if voices.status_code == 200 else [],
     }
+
+
+async def read_members() -> list[dict]:
+    """Everyone on the team, with their role."""
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/members",
+            headers=_headers(),
+            params={"select": "email,role,added_by,created_at", "order": "created_at.asc"},
+            timeout=15,
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+async def save_member(email: str, role: str, added_by: str) -> dict:
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{SUPABASE_URL}/rest/v1/members",
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+            params={"on_conflict": "email"},
+            json=[{"email": email.strip().lower(), "role": role, "added_by": added_by}],
+            timeout=15,
+        )
+        res.raise_for_status()
+        rows = res.json()
+    return rows[0] if rows else {}
+
+
+async def delete_member(email: str) -> None:
+    async with httpx.AsyncClient() as client:
+        res = await client.delete(
+            f"{SUPABASE_URL}/rest/v1/members",
+            headers=_headers(),
+            params={"email": f"eq.{email.strip().lower()}"},
+            timeout=15,
+        )
+        res.raise_for_status()

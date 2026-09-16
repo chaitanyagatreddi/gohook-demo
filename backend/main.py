@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, verified_reddit_threads
 from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
-from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, read_usage
+from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, read_usage, read_members, save_member, delete_member
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -86,6 +86,29 @@ async def has_scott_access(identity: Optional[dict]) -> bool:
     granted = bool(username and username in SCOTT_ACCESS_REDDIT_USERNAMES)
     logger.info("Scott access checked through linked Reddit account: granted=%s", granted)
     return granted
+
+
+async def member_role(identity: Optional[dict]) -> Optional[str]:
+    """'owner', 'admin' or None. The env list is the bootstrap owner list."""
+    email = str((identity or {}).get("email", "")).strip().lower()
+    if not email:
+        return None
+    if email in SCOTT_ADMIN_EMAILS:
+        return "owner"
+    try:
+        for member in await read_members():
+            if str(member.get("email", "")).strip().lower() == email:
+                return member.get("role") or "admin"
+    except Exception:
+        logger.exception("Could not read the team list")
+    return None
+
+
+async def require_team(identity: Optional[dict], owner_only: bool = False) -> str:
+    role = await member_role(identity)
+    if role is None or (owner_only and role != "owner"):
+        raise HTTPException(status_code=403, detail="Owner access is required." if owner_only else "Team access is required.")
+    return role
 
 
 def require_scott_admin(identity: Optional[dict]) -> dict:
@@ -267,7 +290,7 @@ async def log_event(req: EventRequest, user_id: Optional[str] = Depends(get_curr
 @app.get("/admin/usage")
 async def admin_usage(days: int = 30, identity: Optional[dict] = Depends(get_current_identity)):
     """Owner view: who signed up, what they did, and where it broke."""
-    require_scott_admin(identity)
+    role = await require_team(identity)
     try:
         usage = await read_usage(days)
         users = await list_supabase_users()
@@ -283,7 +306,42 @@ async def admin_usage(days: int = 30, identity: Optional[dict] = Depends(get_cur
         }
         for user in users
     ]
+    usage["role"] = role
     return usage
+
+
+class MemberRequest(BaseModel):
+    email: str
+    role: str = "admin"
+
+
+@app.get("/admin/team")
+async def team_list(identity: Optional[dict] = Depends(get_current_identity)):
+    role = await require_team(identity)
+    members = await read_members()
+    owners = [{"email": email, "role": "owner", "added_by": "settings"} for email in sorted(SCOTT_ADMIN_EMAILS)]
+    known = {m["email"] for m in members}
+    return {"role": role, "members": [o for o in owners if o["email"] not in known] + members}
+
+
+@app.post("/admin/team")
+async def team_add(req: MemberRequest, identity: Optional[dict] = Depends(get_current_identity)):
+    await require_team(identity, owner_only=True)
+    email = req.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="That doesn't look like an email address.")
+    if req.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=400, detail="Role must be owner or admin.")
+    return {"member": await save_member(email, req.role, str(identity.get("email", "")))}
+
+
+@app.delete("/admin/team/{email:path}")
+async def team_remove(email: str, identity: Optional[dict] = Depends(get_current_identity)):
+    await require_team(identity, owner_only=True)
+    if email.strip().lower() in SCOTT_ADMIN_EMAILS:
+        raise HTTPException(status_code=400, detail="Owners set in the environment can't be removed here.")
+    await delete_member(email)
+    return {"removed": True}
 
 
 @app.get("/scott-admin/users")
