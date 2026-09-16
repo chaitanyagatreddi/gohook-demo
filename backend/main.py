@@ -89,12 +89,12 @@ async def has_scott_access(identity: Optional[dict]) -> bool:
 
 
 async def member_role(identity: Optional[dict]) -> Optional[str]:
-    """'owner', 'admin' or None. The env list is the bootstrap owner list."""
+    """'superadmin', 'admin' or None. The env list is the bootstrap superadmin list."""
     email = str((identity or {}).get("email", "")).strip().lower()
     if not email:
         return None
     if email in SCOTT_ADMIN_EMAILS:
-        return "owner"
+        return "superadmin"
     try:
         for member in await read_members():
             if str(member.get("email", "")).strip().lower() == email:
@@ -104,10 +104,10 @@ async def member_role(identity: Optional[dict]) -> Optional[str]:
     return None
 
 
-async def require_team(identity: Optional[dict], owner_only: bool = False) -> str:
+async def require_team(identity: Optional[dict], superadmin_only: bool = False) -> str:
     role = await member_role(identity)
-    if role is None or (owner_only and role != "owner"):
-        raise HTTPException(status_code=403, detail="Owner access is required." if owner_only else "Team access is required.")
+    if role is None or (superadmin_only and role != "superadmin"):
+        raise HTTPException(status_code=403, detail="Super admin access is required." if superadmin_only else "Team access is required.")
     return role
 
 
@@ -319,27 +319,27 @@ class MemberRequest(BaseModel):
 async def team_list(identity: Optional[dict] = Depends(get_current_identity)):
     role = await require_team(identity)
     members = await read_members()
-    owners = [{"email": email, "role": "owner", "added_by": "settings"} for email in sorted(SCOTT_ADMIN_EMAILS)]
+    owners = [{"email": email, "role": "superadmin", "added_by": "settings"} for email in sorted(SCOTT_ADMIN_EMAILS)]
     known = {m["email"] for m in members}
     return {"role": role, "members": [o for o in owners if o["email"] not in known] + members}
 
 
 @app.post("/admin/team")
 async def team_add(req: MemberRequest, identity: Optional[dict] = Depends(get_current_identity)):
-    await require_team(identity, owner_only=True)
+    await require_team(identity, superadmin_only=True)
     email = req.email.strip().lower()
     if "@" not in email:
         raise HTTPException(status_code=400, detail="That doesn't look like an email address.")
-    if req.role not in {"owner", "admin"}:
-        raise HTTPException(status_code=400, detail="Role must be owner or admin.")
+    if req.role not in {"superadmin", "admin"}:
+        raise HTTPException(status_code=400, detail="Role must be superadmin or admin.")
     return {"member": await save_member(email, req.role, str(identity.get("email", "")))}
 
 
 @app.delete("/admin/team/{email:path}")
 async def team_remove(email: str, identity: Optional[dict] = Depends(get_current_identity)):
-    await require_team(identity, owner_only=True)
+    await require_team(identity, superadmin_only=True)
     if email.strip().lower() in SCOTT_ADMIN_EMAILS:
-        raise HTTPException(status_code=400, detail="Owners set in the environment can't be removed here.")
+        raise HTTPException(status_code=400, detail="Super admins set in the environment can't be removed here.")
     await delete_member(email)
     return {"removed": True}
 

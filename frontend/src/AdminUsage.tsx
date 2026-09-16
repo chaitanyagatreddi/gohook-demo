@@ -199,7 +199,7 @@ export default function AdminUsage({ api }: { api: string }) {
       <div className="rounded-xl border border-[#242a33] bg-[#14171c] p-4">
         <div className="flex items-center justify-between">
           <p className="text-[11px] uppercase tracking-[0.08em] text-[#858b95]">Team</p>
-          <span className="text-[11px] text-[#6b7280]">owners see everything and manage the team · admins can view</span>
+          <span className="text-[11px] text-[#6b7280]">super admins manage the team · admins can view</span>
         </div>
         <table className="mt-3 w-full text-sm">
           <tbody>
@@ -207,10 +207,10 @@ export default function AdminUsage({ api }: { api: string }) {
               <tr key={member.email} className="border-t border-[#242a33] first:border-0">
                 <td className="py-2 text-[#e8eaed]">{member.email}</td>
                 <td className="py-2 text-right">
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${member.role === 'owner' ? 'bg-[#ff4500]/15 text-[#ff6a33]' : 'bg-[#242a33] text-[#9aa4b2]'}`}>{member.role}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${member.role === 'superadmin' ? 'bg-[#ff4500]/15 text-[#ff6a33]' : 'bg-[#242a33] text-[#9aa4b2]'}`}>{member.role === 'superadmin' ? 'super admin' : member.role}</span>
                 </td>
                 <td className="py-2 text-right">
-                  {usage.role === 'owner' && member.added_by !== 'settings' && (
+                  {usage.role === 'superadmin' && member.added_by !== 'settings' && (
                     <button onClick={() => removeMember(member.email)} className="text-[11px] text-[#6b7280] hover:text-red-400">Remove</button>
                   )}
                 </td>
@@ -218,7 +218,7 @@ export default function AdminUsage({ api }: { api: string }) {
             ))}
           </tbody>
         </table>
-        {usage.role === 'owner' && (
+        {usage.role === 'superadmin' && (
           <div className="mt-3 flex gap-2">
             <input
               type="email"
