@@ -771,7 +771,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
                       <dt className="text-[#9aa4b2]">thread</dt>
                       <dd>
                         <a
-                          href={`https://reddit.com${selectedNode.permalink}`}
+                          href={selectedNode.permalink.startsWith('http') ? selectedNode.permalink : `https://reddit.com${selectedNode.permalink}`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-[#ff6a33] underline"
