@@ -3,7 +3,9 @@ import { authHeaders } from './supabaseClient'
 
 type EventRow = { user_id: string | null; event: string; ok: boolean; meta: Record<string, unknown>; created_at: string }
 type UserRow = { id: string; email: string; created_at?: string; last_sign_in_at?: string }
-type Usage = { rows: EventRow[]; users: UserRow[]; days: number }
+type RedditRow = { user_id: string; reddit_username?: string; status?: string; meta?: { karma?: number }; last_synced_at?: string }
+type VoiceRow = { user_id: string; source?: string; sample_count?: number }
+type Usage = { rows: EventRow[]; users: UserRow[]; days: number; reddit: RedditRow[]; voices: VoiceRow[] }
 
 const LABELS: Record<string, string> = {
   scan: 'Scans',
@@ -73,6 +75,9 @@ export default function AdminUsage({ api }: { api: string }) {
 
   const failures = rows.filter(r => !r.ok).slice(0, 12)
   const active = new Set(rows.filter(r => r.user_id).map(r => r.user_id as string))
+  const reddit = new Map((usage.reddit ?? []).map(r => [r.user_id, r]))
+  const voices = new Map((usage.voices ?? []).map(v => [v.user_id, v]))
+  const connected = usage.users.filter(u => reddit.get(u.id)?.status === 'active').length
 
   return (
     <div className="space-y-6">
@@ -93,7 +98,8 @@ export default function AdminUsage({ api }: { api: string }) {
           { label: 'Accounts', value: usage.users.length },
           { label: 'Did something', value: active.size },
           { label: 'Actions', value: rows.length },
-          { label: 'Failed', value: rows.filter(r => !r.ok).length },
+          { label: 'Reddit connected', value: `${connected}/${usage.users.length}` },
+          { label: 'Failed actions', value: rows.filter(r => !r.ok).length },
         ].map(card => (
           <div key={card.label} className="rounded-xl border border-[#242a33] bg-[#14171c] p-4">
             <p className="text-[11px] uppercase tracking-[0.08em] text-[#858b95]">{card.label}</p>
@@ -156,9 +162,23 @@ export default function AdminUsage({ api }: { api: string }) {
               .slice()
               .sort((a, b) => (lastSeen.get(b.id) ?? '').localeCompare(lastSeen.get(a.id) ?? ''))
               .map(user => (
-                <tr key={user.id} className="border-t border-[#242a33] first:border-0">
-                  <td className="py-2 text-[#e8eaed]">{user.email}</td>
-                  <td className="py-2 text-right text-xs text-[#9aa4b2]">signed in {ago(user.last_sign_in_at)}</td>
+                <tr key={user.id} className="border-t border-[#242a33] first:border-0 align-top">
+                  <td className="py-2 text-[#e8eaed]">
+                    {user.email}
+                    <span className="block text-[11px] text-[#6b7280]">joined {ago(user.created_at)} · signed in {ago(user.last_sign_in_at)}</span>
+                  </td>
+                  <td className="py-2 text-right text-xs">
+                    {reddit.get(user.id)?.status === 'active'
+                      ? <span className="text-[#50c878]">u/{reddit.get(user.id)?.reddit_username}{reddit.get(user.id)?.meta?.karma !== undefined ? ` · ${reddit.get(user.id)?.meta?.karma} karma` : ''}</span>
+                      : reddit.has(user.id)
+                        ? <span className="text-amber-300">Reddit {reddit.get(user.id)?.status}</span>
+                        : <span className="text-[#6b7280]">no Reddit</span>}
+                  </td>
+                  <td className="py-2 text-right text-xs">
+                    {voices.has(user.id)
+                      ? <span className="text-[#50c878]">voice ({voices.get(user.id)?.source})</span>
+                      : <span className="text-[#6b7280]">no voice</span>}
+                  </td>
                   <td className="py-2 text-right text-xs">
                     {lastSeen.has(user.id)
                       ? <span className="text-[#50c878]">active {ago(lastSeen.get(user.id))}</span>

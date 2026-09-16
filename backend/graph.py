@@ -7,6 +7,7 @@ Anything belonging to a person (topics, saves, citations) lives in `user_nodes` 
 
 No model calls in this file. Topic extraction lives in topics.py.
 """
+import asyncio
 import os
 import re
 from typing import Optional
@@ -483,4 +484,24 @@ async def read_usage(days: int = 30) -> dict:
         )
         res.raise_for_status()
         rows = res.json()
-    return {"rows": rows, "days": days}
+    async with httpx.AsyncClient() as client:
+        reddit, voices = await asyncio.gather(
+            client.get(
+                f"{SUPABASE_URL}/rest/v1/reddit_connections",
+                headers=_headers(),
+                params={"select": "user_id,reddit_username,status,meta,last_synced_at"},
+                timeout=20,
+            ),
+            client.get(
+                f"{SUPABASE_URL}/rest/v1/voice_profiles",
+                headers=_headers(),
+                params={"select": "user_id,source,sample_count,updated_at"},
+                timeout=20,
+            ),
+        )
+    return {
+        "rows": rows,
+        "days": days,
+        "reddit": reddit.json() if reddit.status_code == 200 else [],
+        "voices": voices.json() if voices.status_code == 200 else [],
+    }
