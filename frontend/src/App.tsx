@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Board, { type BoardCard, BOARD_COLUMN_KEYS } from './Board'
 import { upsertReplyCard } from './boardUpsert'
+import VoiceSetup from './VoiceSetup'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase } from './supabaseClient'
@@ -112,7 +113,7 @@ function renderAnswer(answer: string, sources: AskSource[]) {
   })
 }
 
-type Draft = { draft: string; word_count: number; tone: string }
+type Draft = { draft: string; word_count: number; tone: string; voiced?: boolean }
 function cleanSourceUrl(value: string) {
   try {
     const url = new URL(value.trim())
@@ -539,6 +540,28 @@ export default function App() {
   const [authSent, setAuthSent] = useState(false)
   const [authError, setAuthError] = useState('')
   const [zernioConnected, setZernioConnected] = useState(false)
+  const [voiceReady, setVoiceReady] = useState(false)
+  const [redditConnected, setRedditConnected] = useState(false)
+
+  // Whether this person has a saved writing voice, and a connected Reddit account.
+  useEffect(() => {
+    if (!session) { setVoiceReady(false); setRedditConnected(false); return }
+    let live = true
+    ;(async () => {
+      const headers = await authHeaders()
+      try {
+        const res = await fetch(`${API}/voice`, { headers })
+        const data = await res.json()
+        if (live) setVoiceReady(Boolean(data.voice))
+      } catch { /* no voice is fine */ }
+      try {
+        const res = await fetch(`${API}/reddit/status`, { headers })
+        const data = res.ok ? await res.json() : {}
+        if (live) setRedditConnected(Boolean(data.connected ?? data.status === 'active'))
+      } catch { /* leave it off */ }
+    })()
+    return () => { live = false }
+  }, [session])
   const [zernioKeyInput, setZernioKeyInput] = useState('')
   const [zernioConnecting, setZernioConnecting] = useState(false)
   const [zernioError, setZernioError] = useState('')
@@ -1373,6 +1396,14 @@ export default function App() {
                       <span className="bg-[#0b0d10] border border-[#242a33] text-[#9aa4b2] px-2 py-0.5 rounded">
                         tone: {draft.tone}
                       </span>
+                      {draft?.voiced && (
+                        <span className="rounded-full border border-[#50c878]/30 bg-[#50c878]/10 px-2 py-0.5 text-[#50c878]" title="Written in your saved voice">
+                          in your voice
+                        </span>
+                      )}
+                      {!draft?.voiced && voiceReady && (
+                        <span className="text-[#6b7280]" title="Your voice was not used for this draft">plain</span>
+                      )}
                       <button
                         onClick={copyDraft}
                         className="ml-auto text-[#ff6a33] hover:underline"
@@ -1753,7 +1784,15 @@ export default function App() {
 
         {view === 'settings' && (
           <div className="max-w-md">
-            <h2 className="text-lg font-semibold text-[#e8eaed] mb-4">API Keys</h2>
+            <h2 className="text-lg font-semibold text-[#e8eaed] mb-4">Writing voice</h2>
+            <VoiceSetup
+              api={API}
+              authHeaders={authHeaders}
+              signedIn={!!session}
+              redditConnected={redditConnected}
+              onSaved={voice => setVoiceReady(Boolean(voice))}
+            />
+            <h2 className="mt-8 text-lg font-semibold text-[#e8eaed] mb-4">API Keys</h2>
             <div className="border border-[#242a33] bg-[#14171c] rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm font-medium text-[#e8eaed]">Zernio</p>
@@ -2218,6 +2257,14 @@ export default function App() {
                       <span className="bg-[#0b0d10] border border-[#242a33] text-[#9aa4b2] px-2 py-0.5 rounded">
                         tone: {comment.tone}
                       </span>
+                      {comment?.voiced && (
+                        <span className="rounded-full border border-[#50c878]/30 bg-[#50c878]/10 px-2 py-0.5 text-[#50c878]" title="Written in your saved voice">
+                          in your voice
+                        </span>
+                      )}
+                      {!comment?.voiced && voiceReady && (
+                        <span className="text-[#6b7280]" title="Your voice was not used for this draft">plain</span>
+                      )}
                       <button
                         onClick={addReplyToBoard}
                         className={`ml-auto rounded-md border px-2 py-0.5 transition-colors ${replyBoardStatus ? 'border-[#50c878]/40 text-[#50c878]' : 'border-[#3a4250] text-[#e8eaed] hover:border-[#ff4500]/60 hover:text-[#ff6a33]'}`}
