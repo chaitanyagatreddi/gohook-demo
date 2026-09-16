@@ -3,6 +3,7 @@ import Board, { type BoardCard, BOARD_COLUMN_KEYS } from './Board'
 import { upsertReplyCard } from './boardUpsert'
 import VoiceSetup from './VoiceSetup'
 import AdminUsage from './AdminUsage'
+import Audit from './Audit'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase, authHeaders } from './supabaseClient'
@@ -159,7 +160,7 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
-  const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'reply' | 'graph' | 'settings' | 'usage'>(() => {
+  const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'reply' | 'graph' | 'settings' | 'usage' | 'audit'>(() => {
     // Coming back from signing into Reddit: land on the Graph page.
     try {
       return new URLSearchParams(window.location.search).get('reddit') === 'connected' ? 'graph' : 'results'
@@ -1242,6 +1243,7 @@ export default function App() {
             {([
               { key: 'results', label: 'Ask', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
               { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
+              { key: 'audit', label: 'Audit', icon: <><path d="M12 3a9 9 0 1 0 9 9" /><path d="M12 12l6-6" /><path d="M12 8v4h4" /></> },
               { key: 'ideate', label: 'Ideate', icon: <><path d="M7 17L17 7" /><path d="M8 7h9v9" /></> },
               { key: 'reply', label: 'Reply to Threads', icon: <><path d="M9 14l-4-4 4-4" /><path d="M5 10h9a5 5 0 0 1 5 5v3" /></> },
               { key: 'questions', label: 'Research', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></> },
@@ -1547,6 +1549,8 @@ export default function App() {
         )}
 
         {view === 'board' && <Board board={board} setBoard={setBoard} onGoToResults={() => setView('results')} />}
+
+        {view === 'audit' && <Audit api={API} />}
 
         {view === 'usage' && (
           <div>
