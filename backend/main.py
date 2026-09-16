@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, verified_reddit_threads
 from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
-from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile
+from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, read_usage
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -245,6 +245,45 @@ def health():
 @app.get("/scott-access")
 async def scott_access(identity: Optional[dict] = Depends(get_current_identity)):
     return {"enabled": await has_scott_access(identity)}
+
+
+def _http_detail(exc: Exception) -> str:
+    return str(getattr(exc, "detail", "")) or exc.__class__.__name__
+
+
+class EventRequest(BaseModel):
+    event: str
+    ok: bool = True
+    meta: dict = {}
+
+
+@app.post("/events")
+async def log_event(req: EventRequest, user_id: Optional[str] = Depends(get_current_user)):
+    """What someone just did. Signed-out people are logged without an id."""
+    await record_event(user_id, req.event, req.ok, req.meta)
+    return {"logged": True}
+
+
+@app.get("/admin/usage")
+async def admin_usage(days: int = 30, identity: Optional[dict] = Depends(get_current_identity)):
+    """Owner view: who signed up, what they did, and where it broke."""
+    require_scott_admin(identity)
+    try:
+        usage = await read_usage(days)
+        users = await list_supabase_users()
+    except Exception:
+        logger.exception("Could not read usage")
+        raise HTTPException(status_code=502, detail="Could not load usage. Please try again.")
+    usage["users"] = [
+        {
+            "id": user.get("id"),
+            "email": str(user.get("email", "")).strip().lower(),
+            "created_at": user.get("created_at"),
+            "last_sign_in_at": user.get("last_sign_in_at"),
+        }
+        for user in users
+    ]
+    return usage
 
 
 @app.get("/scott-admin/users")
@@ -835,6 +874,12 @@ async def question_answer_stream(
                     await save_question_memory(identity["id"], req.question, answer)
                 except Exception:
                     logger.exception("Could not save question memory")
+            await record_event(
+                identity["id"] if identity else None,
+                "question",
+                not withheld,
+                {"withheld": withheld, "reasons": validation["fail_reasons"][:3], "threads": validation["verified"], "mode": validation["mode"]},
+            )
             visible_answer = answer if scott_visible else {key: value for key, value in answer.items() if key not in {"validation", "run", "claims"}}
             yield _question_event({"type": "result", "data": visible_answer})
         except Exception:
@@ -1167,7 +1212,11 @@ async def find_discussing_subreddits(topic: str, source_url: str = "") -> list[d
 async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depends(get_current_user)):
     if not req.url.strip():
         raise HTTPException(status_code=400, detail="Please enter a link")
-    page_text = await fetch_source_content(req.url, user_id)
+    try:
+        page_text = await fetch_source_content(req.url, user_id)
+    except HTTPException as exc:
+        await record_event(user_id, "ideate_angles", False, {"why": _http_detail(exc), "step": "fetch"})
+        raise
     lines = [line.strip() for line in page_text.splitlines() if line.strip()]
     # First line with real words: skips Reddit usernames and flair lines.
     title_line = next((line for line in lines if len(line.split()) >= 3), lines[0] if lines else "")
@@ -1194,12 +1243,14 @@ async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depen
         raise HTTPException(status_code=500, detail="Could not create post ideas. Please try again.")
     if not angles:
         raise HTTPException(status_code=502, detail="Could not create post ideas from that page.")
-    return {
+    result = {
         "source_title": source_title,
         "source_preview": clean_preview_text(page_text[:280]),
         "subreddits": subreddits,
         "angles": angles,
     }
+    await record_event(user_id, "ideate_angles", bool(angles), {"angles": len(angles), "subreddits": len(subreddits)})
+    return result
 
 
 class VoiceAnalyzeRequest(BaseModel):
@@ -1316,9 +1367,12 @@ async def ideate_draft(req: IdeateDraftRequest, user_id: Optional[str] = Depends
     page_text = await fetch_source_content(req.url, user_id)
     voice = await _voice_for(user_id) if req.use_voice else None
     try:
-        return await run_in_threadpool(draft_post_from_angle, page_text, req.angle, req.takeaway, req.example_threads, voice)
-    except Exception:
+        drafted = await run_in_threadpool(draft_post_from_angle, page_text, req.angle, req.takeaway, req.example_threads, voice)
+        await record_event(user_id, "ideate_draft", True, {"subreddit": (req.angle or {}).get("subreddit", ""), "voiced": bool(voice)})
+        return drafted
+    except Exception as exc:
         logger.exception("Ideate draft failed")
+        await record_event(user_id, "ideate_draft", False, {"why": _http_detail(exc)})
         raise HTTPException(status_code=500, detail="Could not write the draft. Please try again.")
 
 
@@ -1329,11 +1383,15 @@ async def comment(req: CommentRequest, user_id: Optional[str] = Depends(get_curr
     try:
         post = await fetch_source_content(req.post_url, user_id) if req.post_url else req.post
         voice = await _voice_for(user_id) if req.use_voice else None
-        return await run_in_threadpool(draft_comment, post, req.intent, voice)
-    except HTTPException:
+        reply = await run_in_threadpool(draft_comment, post, req.intent, voice)
+        await record_event(user_id, "reply_draft", True, {"voiced": bool(voice)})
+        return reply
+    except HTTPException as exc:
+        await record_event(user_id, "reply_draft", False, {"why": _http_detail(exc)})
         raise
-    except Exception:
+    except Exception as exc:
         logger.exception("Comment generation failed")
+        await record_event(user_id, "reply_draft", False, {"why": _http_detail(exc)})
         raise HTTPException(status_code=500, detail="Comment generation failed. Please try again.")
 
 

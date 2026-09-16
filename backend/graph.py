@@ -10,7 +10,7 @@ No model calls in this file. Topic extraction lives in topics.py.
 import os
 import re
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from dotenv import load_dotenv
@@ -455,3 +455,32 @@ async def delete_voice_profile(user_id: str) -> None:
             timeout=15,
         )
         res.raise_for_status()
+
+
+async def record_event(user_id: Optional[str], event: str, ok: bool = True, meta: Optional[dict] = None) -> None:
+    """Log what someone did. Never let this break the thing they were doing."""
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/events",
+                headers={**_headers(), "Prefer": "return=minimal"},
+                json=[{"user_id": user_id, "event": event[:60], "ok": ok, "meta": meta or {}}],
+                timeout=8,
+            )
+    except Exception:
+        pass
+
+
+async def read_usage(days: int = 30) -> dict:
+    """Counts for the owner dashboard: signups, what people did, and where it failed."""
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/events",
+            headers=_headers(),
+            params={"created_at": f"gte.{since}", "select": "user_id,event,ok,meta,created_at", "order": "created_at.desc", "limit": "5000"},
+            timeout=20,
+        )
+        res.raise_for_status()
+        rows = res.json()
+    return {"rows": rows, "days": days}
