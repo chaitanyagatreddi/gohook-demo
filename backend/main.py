@@ -11,8 +11,9 @@ from graph import ingest_threads, link_user_to_threads, read_graph, read_questio
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
+from audit import run_audit
 import composio_reddit
-import os, re, httpx, logging, json
+import os, re, time, httpx, logging, json
 from fastapi import Header, Depends
 from dotenv import load_dotenv
 load_dotenv()
@@ -308,6 +309,46 @@ async def admin_usage(days: int = 30, identity: Optional[dict] = Depends(get_cur
     ]
     usage["role"] = role
     return usage
+
+
+class AuditRequest(BaseModel):
+    brand: str
+    category: str = ""
+    competitors: List[str] = []
+
+
+@app.post("/audit")
+async def audit(req: AuditRequest, identity: Optional[dict] = Depends(get_current_identity)):
+    """Score how present a brand is on Reddit. Needs a connected Reddit account."""
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to run an audit.")
+    if not req.brand.strip():
+        raise HTTPException(status_code=400, detail="Tell us the brand name to look for.")
+
+    saved = await composio_reddit.read_connection(identity["id"])
+    if not saved or saved.get("status") != "active":
+        raise HTTPException(status_code=400, detail="Connect Reddit first. The audit checks your account too.")
+
+    meta = saved.get("meta") or {}
+    created = meta.get("created_utc")
+    age_years = round((time.time() - float(created)) / 31_557_600, 1) if created else 0
+    profile = {"karma": meta.get("karma") or 0, "account_age_years": age_years}
+    username = str(saved.get("reddit_username") or "")
+
+    try:
+        report = await run_audit(req.brand, req.category, req.competitors, profile, {username})
+    except Exception as exc:
+        logger.exception("Audit failed")
+        await record_event(identity["id"], "audit", False, {"why": _http_detail(exc)})
+        raise HTTPException(status_code=502, detail="Could not finish the audit. Please try again.")
+
+    await record_event(identity["id"], "audit", True, {
+        "brand": req.brand.strip()[:40],
+        "score": report["score"],
+        "earned": len(report["earned"]),
+        "missing": len(report["missing_communities"]),
+    })
+    return report
 
 
 class MemberRequest(BaseModel):
