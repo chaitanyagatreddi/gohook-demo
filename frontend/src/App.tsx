@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import Board, { type BoardCard } from './Board'
+import Board, { type BoardCard, BOARD_COLUMN_KEYS } from './Board'
+import { upsertReplyCard } from './boardUpsert'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase } from './supabaseClient'
@@ -156,7 +157,7 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
-  const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'graph' | 'settings'>(() => {
+  const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'reply' | 'graph' | 'settings'>(() => {
     // Coming back from signing into Reddit: land on the Graph page.
     try {
       return new URLSearchParams(window.location.search).get('reddit') === 'connected' ? 'graph' : 'results'
@@ -177,7 +178,9 @@ export default function App() {
   const [board, setBoard] = useState<BoardCard[]>(() => {
     try {
       const raw = localStorage.getItem('redditscan_board')
-      return raw ? JSON.parse(raw) : []
+      const saved: BoardCard[] = raw ? JSON.parse(raw) : []
+      // Cards saved with a column this version doesn't know go back to New.
+      return saved.map(card => (BOARD_COLUMN_KEYS.includes(card.column) ? card : { ...card, column: 'new' }))
     } catch {
       return []
     }
@@ -270,8 +273,7 @@ export default function App() {
     } catch { /* the Board save already happened; leave it */ }
   }
 
-  // Compose section (Notepad + Reply) collapsed by default
-  const [composeOpen, setComposeOpen] = useState(false)
+  const [ideateTab, setIdeateTab] = useState<'idea' | 'url'>('idea')
 
   // Notepad state
   const [idea, setIdea] = useState('')
@@ -766,6 +768,17 @@ export default function App() {
   const [comment, setComment] = useState<Draft | null>(null)
   const [commentError, setCommentError] = useState('')
   const [commentCopied, setCommentCopied] = useState(false)
+  const [replyBoardStatus, setReplyBoardStatus] = useState<'' | 'added' | 'updated'>('')
+
+  function addReplyToBoard() {
+    if (!comment?.draft || !postUrl.trim()) return
+    const result = upsertReplyCard(board, { url: cleanSourceUrl(postUrl), draft: comment.draft, preview: postPreview })
+    setBoard(() => result.board)
+    if (result.action === 'added') {
+      tellGraphSaved([{ title: postPreview.slice(0, 120), selftext: postPreview, url: cleanSourceUrl(postUrl), permalink: cleanSourceUrl(postUrl) }])
+    }
+    setReplyBoardStatus(result.action)
+  }
   const [commentPlatform, setCommentPlatform] = useState<'reddit' | 'hn'>('reddit')
   const [postFetched, setPostFetched] = useState(false)
   const [postPreview, setPostPreview] = useState('')
@@ -967,6 +980,7 @@ export default function App() {
     setCommenting(true)
     setCommentError('')
     setComment(null)
+    setReplyBoardStatus('')
     try {
       const res = await fetch(`${API}/comment`, {
         method: 'POST',
@@ -1040,8 +1054,7 @@ export default function App() {
     setComment(null)
     setCommentError('')
     setIntent('')
-    setComposeOpen(true)
-    setTimeout(() => commentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+    setView('reply')
   }
 
   function copyComment() {
@@ -1187,10 +1200,11 @@ export default function App() {
           </div>
           <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-row md:flex-col gap-1.5">
             {([
-              { key: 'results', label: 'Results', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
+              { key: 'results', label: 'Ask', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
               { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
               { key: 'ideate', label: 'Ideate', icon: <><path d="M7 17L17 7" /><path d="M8 7h9v9" /></> },
-              { key: 'questions', label: 'Questions', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></> },
+              { key: 'reply', label: 'Reply to Threads', icon: <><path d="M9 14l-4-4 4-4" /><path d="M5 10h9a5 5 0 0 1 5 5v3" /></> },
+              { key: 'questions', label: 'Research', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></> },
               { key: 'graph', label: 'Graph', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="12" cy="17" r="2.5" /><path d="M8 7.5l8 -0.5M7.2 8.2L11 14.8M16.8 9.2L13 14.8" /></> },
               { key: 'settings', label: 'Settings', icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></> },
             ] as const).map(item => (
@@ -1254,7 +1268,189 @@ export default function App() {
           )}
         </div>
       ) : view === 'ideate' ? (
-        <IdeateWireframe embedded />
+        <div>
+          <div className="max-w-3xl mx-auto px-4 pt-10">
+            <div className="border-b border-[#242a33] pb-6">
+              <h2 className="text-3xl font-bold tracking-tight">Ideate</h2>
+              <p className="text-sm text-[#9aa4b2] mt-2">Start from your own idea, or from a page you want people to talk about.</p>
+              <div className="mt-4 inline-flex gap-1 bg-[#14171c] border border-[#242a33] rounded-lg p-1">
+                <button onClick={() => setIdeateTab('idea')} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${ideateTab === 'idea' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}>From your idea</button>
+                <button onClick={() => setIdeateTab('url')} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${ideateTab === 'url' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}>From a URL</button>
+              </div>
+            </div>
+          </div>
+          {ideateTab === 'url' ? <IdeateWireframe embedded /> : (
+          <div className="max-w-3xl mx-auto px-4 py-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-[#e8eaed]">
+                    📝 New post
+                    {intel && draftPlatform === 'reddit' && (
+                      <span className="ml-2 text-xs font-normal text-[#ff6a33]">tone matched to scan</span>
+                    )}
+                  </h3>
+                  <div className="flex gap-1 bg-[#14171c] border border-[#242a33] rounded-lg p-1">
+                    <button
+                      onClick={() => setDraftPlatform('reddit')}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'reddit' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
+                    >
+                      🟠 Reddit
+                    </button>
+                    <button
+                      onClick={() => setDraftPlatform('hn')}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'hn' ? 'bg-[#ff6600] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
+                    >
+                      🔶 HN
+                    </button>
+                    <button
+                      onClick={() => setDraftPlatform('pg')}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'pg' ? 'bg-[#3a4250] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
+                    >
+                      ✍️ PG
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-[#9aa4b2] mt-1">
+                  Drop a 2-line idea. We'll draft a {draftPlatform === 'hn' ? 'Hacker News style' : draftPlatform === 'pg' ? 'Paul Graham style' : 'Reddit style'} post that sounds human.
+                </p>
+
+                {draftPlatform === 'reddit' && subreddits.length > 0 && (
+                  <div className="mt-3">
+                    <input
+                      type="text"
+                      placeholder="Search subreddit…"
+                      value={subredditSearch}
+                      onChange={e => setSubredditSearch(e.target.value)}
+                      className="w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+                    />
+                    {subredditSearch && (
+                      <div className="mt-1 border border-[#242a33] rounded-lg bg-[#14171c] shadow-sm max-h-32 overflow-y-auto">
+                        {subreddits.filter(s => s.toLowerCase().includes(subredditSearch.toLowerCase())).slice(0, 8).map(s => (
+                          <button
+                            key={s}
+                            onClick={() => { setSubreddit(s); setSubredditSearch(s); }}
+                            className="w-full text-left px-3 py-1.5 text-sm hover:bg-[#ff4500]/10 text-[#e8eaed]"
+                          >
+                            r/{s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {subreddit && <p className="mt-1 text-xs text-[#ff6a33]">Posting to r/{subreddit}</p>}
+                  </div>
+                )}
+
+                <textarea
+                  value={idea}
+                  onChange={e => setIdea(e.target.value)}
+                  placeholder="e.g. I switched from Notion to Obsidian after 6 months, speed killed it for me"
+                  rows={3}
+                  className="mt-3 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
+                />
+
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-xs text-[#6b7280]">
+                    {idea.trim().split(/\s+/).filter(Boolean).length} words
+                  </span>
+                  <button
+                    onClick={generateDraft}
+                    disabled={drafting || !idea.trim()}
+                    className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-colors"
+                  >
+                    {drafting ? 'Drafting…' : 'Generate post →'}
+                  </button>
+                </div>
+
+                {draftError && <p className="mt-3 text-sm text-red-400">{draftError}</p>}
+
+                {draft && (
+                  <div className="mt-4 border border-[#242a33] rounded-xl p-4 bg-[#14171c]">
+                    <p className="whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed">
+                      {draft.draft}
+                    </p>
+                    <div className="mt-3 pt-3 border-t border-[#242a33] flex items-center gap-3 text-xs text-[#9aa4b2]">
+                      <span>{draft.word_count} words</span>
+                      <span className="bg-[#0b0d10] border border-[#242a33] text-[#9aa4b2] px-2 py-0.5 rounded">
+                        tone: {draft.tone}
+                      </span>
+                      <button
+                        onClick={copyDraft}
+                        className="ml-auto text-[#ff6a33] hover:underline"
+                      >
+                        {draftCopied ? '✓ Copied!' : 'Copy draft ↗'}
+                      </button>
+                    </div>
+
+                    {/* Schedule to Reddit */}
+                    {draftPlatform === 'reddit' && (
+                      <div className="mt-4 pt-4 border-t border-[#242a33]">
+                        <p className="text-xs font-medium text-[#9aa4b2] mb-2">📅 Schedule to Reddit via Zernio</p>
+
+                        {(!session || !zernioConnected) ? (
+                          <p className="text-xs text-[#9aa4b2]">
+                            {!session ? 'Sign in' : 'Connect Zernio'} in{' '}
+                            <button onClick={() => setView('settings')} className="text-[#ff6a33] underline">
+                              Settings
+                            </button>{' '}
+                            to schedule this post to Reddit.
+                          </p>
+                        ) : (
+                        <div className="flex gap-2 flex-wrap">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={subredditSearch || subreddit}
+                              onChange={e => { setSubredditSearch(e.target.value); setSubreddit(''); setShowSubredditDropdown(true) }}
+                              onFocus={() => setShowSubredditDropdown(true)}
+                              onBlur={() => setTimeout(() => setShowSubredditDropdown(false), 150)}
+                              placeholder="r/SaaS"
+                              className="bg-[#0b0d10] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 w-36"
+                            />
+                            {showSubredditDropdown && subreddits.length > 0 && (
+                              <div className="absolute z-10 mt-1 w-48 bg-[#14171c] border border-[#242a33] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                {subreddits
+                                  .filter(s => s.toLowerCase().includes((subredditSearch || subreddit).toLowerCase()))
+                                  .map(s => (
+                                    <button
+                                      key={s}
+                                      onMouseDown={() => { setSubreddit(s); setSubredditSearch(''); setShowSubredditDropdown(false) }}
+                                      className="w-full text-left px-3 py-2 text-xs hover:bg-[#ff4500]/10 hover:text-[#ff6a33] text-[#e8eaed]"
+                                    >
+                                      r/{s}
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            type="datetime-local"
+                            value={scheduleTime}
+                            onChange={e => setScheduleTime(e.target.value)}
+                            className="bg-[#0b0d10] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+                          />
+                          <button
+                            onClick={schedulePost}
+                            disabled={scheduling}
+                            className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
+                          >
+                            {scheduling ? 'Scheduling…' : scheduleTime ? 'Schedule →' : 'Post now →'}
+                          </button>
+                        </div>
+                        )}
+                        {scheduleError && <p className="mt-2 text-xs text-red-400">{scheduleError}</p>}
+                        {scheduleResult && (
+                          <p className="mt-2 text-xs text-green-400">
+                            ✓ {scheduleResult.status === 'scheduled' ? 'Scheduled!' : 'Posted!'} ID: {scheduleResult.post_id}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+          </div>
+          )}
+        </div>
       ) : view === 'graph' ? (
         <Graph signedIn={!!session} onSignIn={() => setShowAuthGate(true)} />
       ) : (
@@ -1896,196 +2092,12 @@ export default function App() {
           </div>
         )}
 
-        {/* Compose (Notepad + Reply) collapsed until needed */}
-        {view === 'results' && (
-        <div className="mt-10 border-t border-[#242a33] pt-6">
-          <button
-            onClick={() => setComposeOpen(o => !o)}
-            className="w-full flex items-center justify-between text-left group"
-          >
-            <div>
-              <h2 className="text-base font-semibold text-[#e8eaed]">✍️ Compose a post or reply</h2>
-              <p className="text-sm text-[#9aa4b2] mt-0.5">
-                {intel ? 'Draft a post (tone matched to your scan) or reply to any thread above.' : 'Draft a Reddit / HN post or reply that sounds human.'}
-              </p>
+        {view === 'reply' && (
+          <div>
+            <div className="border-b border-[#242a33] pb-6 mb-6">
+              <h2 className="text-3xl font-bold tracking-tight">Reply to Threads</h2>
+              <p className="text-sm text-[#9aa4b2] mt-2">Paste a thread, say what you want to add, and get a reply that fits the conversation.</p>
             </div>
-            <span className={`text-[#9aa4b2] group-hover:text-[#e8eaed] transition-transform ${composeOpen ? 'rotate-180' : ''}`}>
-              ▾
-            </span>
-          </button>
-
-          {composeOpen && (
-            <div className="mt-6 space-y-10">
-              {/* Notepad */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-[#e8eaed]">
-                    📝 New post
-                    {intel && draftPlatform === 'reddit' && (
-                      <span className="ml-2 text-xs font-normal text-[#ff6a33]">tone matched to scan</span>
-                    )}
-                  </h3>
-                  <div className="flex gap-1 bg-[#14171c] border border-[#242a33] rounded-lg p-1">
-                    <button
-                      onClick={() => setDraftPlatform('reddit')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'reddit' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      🟠 Reddit
-                    </button>
-                    <button
-                      onClick={() => setDraftPlatform('hn')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'hn' ? 'bg-[#ff6600] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      🔶 HN
-                    </button>
-                    <button
-                      onClick={() => setDraftPlatform('pg')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'pg' ? 'bg-[#3a4250] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      ✍️ PG
-                    </button>
-                  </div>
-                </div>
-                <p className="text-xs text-[#9aa4b2] mt-1">
-                  Drop a 2-line idea. We'll draft a {draftPlatform === 'hn' ? 'Hacker News style' : draftPlatform === 'pg' ? 'Paul Graham style' : 'Reddit style'} post that sounds human.
-                </p>
-
-                {draftPlatform === 'reddit' && subreddits.length > 0 && (
-                  <div className="mt-3">
-                    <input
-                      type="text"
-                      placeholder="Search subreddit…"
-                      value={subredditSearch}
-                      onChange={e => setSubredditSearch(e.target.value)}
-                      className="w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
-                    />
-                    {subredditSearch && (
-                      <div className="mt-1 border border-[#242a33] rounded-lg bg-[#14171c] shadow-sm max-h-32 overflow-y-auto">
-                        {subreddits.filter(s => s.toLowerCase().includes(subredditSearch.toLowerCase())).slice(0, 8).map(s => (
-                          <button
-                            key={s}
-                            onClick={() => { setSubreddit(s); setSubredditSearch(s); }}
-                            className="w-full text-left px-3 py-1.5 text-sm hover:bg-[#ff4500]/10 text-[#e8eaed]"
-                          >
-                            r/{s}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {subreddit && <p className="mt-1 text-xs text-[#ff6a33]">Posting to r/{subreddit}</p>}
-                  </div>
-                )}
-
-                <textarea
-                  value={idea}
-                  onChange={e => setIdea(e.target.value)}
-                  placeholder="e.g. I switched from Notion to Obsidian after 6 months, speed killed it for me"
-                  rows={3}
-                  className="mt-3 w-full bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 resize-none"
-                />
-
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-[#6b7280]">
-                    {idea.trim().split(/\s+/).filter(Boolean).length} words
-                  </span>
-                  <button
-                    onClick={generateDraft}
-                    disabled={drafting || !idea.trim()}
-                    className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-colors"
-                  >
-                    {drafting ? 'Drafting…' : 'Generate post →'}
-                  </button>
-                </div>
-
-                {draftError && <p className="mt-3 text-sm text-red-400">{draftError}</p>}
-
-                {draft && (
-                  <div className="mt-4 border border-[#242a33] rounded-xl p-4 bg-[#14171c]">
-                    <p className="whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed">
-                      {draft.draft}
-                    </p>
-                    <div className="mt-3 pt-3 border-t border-[#242a33] flex items-center gap-3 text-xs text-[#9aa4b2]">
-                      <span>{draft.word_count} words</span>
-                      <span className="bg-[#0b0d10] border border-[#242a33] text-[#9aa4b2] px-2 py-0.5 rounded">
-                        tone: {draft.tone}
-                      </span>
-                      <button
-                        onClick={copyDraft}
-                        className="ml-auto text-[#ff6a33] hover:underline"
-                      >
-                        {draftCopied ? '✓ Copied!' : 'Copy draft ↗'}
-                      </button>
-                    </div>
-
-                    {/* Schedule to Reddit */}
-                    {draftPlatform === 'reddit' && (
-                      <div className="mt-4 pt-4 border-t border-[#242a33]">
-                        <p className="text-xs font-medium text-[#9aa4b2] mb-2">📅 Schedule to Reddit via Zernio</p>
-
-                        {(!session || !zernioConnected) ? (
-                          <p className="text-xs text-[#9aa4b2]">
-                            {!session ? 'Sign in' : 'Connect Zernio'} in{' '}
-                            <button onClick={() => setView('settings')} className="text-[#ff6a33] underline">
-                              Settings
-                            </button>{' '}
-                            to schedule this post to Reddit.
-                          </p>
-                        ) : (
-                        <div className="flex gap-2 flex-wrap">
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={subredditSearch || subreddit}
-                              onChange={e => { setSubredditSearch(e.target.value); setSubreddit(''); setShowSubredditDropdown(true) }}
-                              onFocus={() => setShowSubredditDropdown(true)}
-                              onBlur={() => setTimeout(() => setShowSubredditDropdown(false), 150)}
-                              placeholder="r/SaaS"
-                              className="bg-[#0b0d10] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs text-[#e8eaed] placeholder-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60 w-36"
-                            />
-                            {showSubredditDropdown && subreddits.length > 0 && (
-                              <div className="absolute z-10 mt-1 w-48 bg-[#14171c] border border-[#242a33] rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                                {subreddits
-                                  .filter(s => s.toLowerCase().includes((subredditSearch || subreddit).toLowerCase()))
-                                  .map(s => (
-                                    <button
-                                      key={s}
-                                      onMouseDown={() => { setSubreddit(s); setSubredditSearch(''); setShowSubredditDropdown(false) }}
-                                      className="w-full text-left px-3 py-2 text-xs hover:bg-[#ff4500]/10 hover:text-[#ff6a33] text-[#e8eaed]"
-                                    >
-                                      r/{s}
-                                    </button>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                          <input
-                            type="datetime-local"
-                            value={scheduleTime}
-                            onChange={e => setScheduleTime(e.target.value)}
-                            className="bg-[#0b0d10] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
-                          />
-                          <button
-                            onClick={schedulePost}
-                            disabled={scheduling}
-                            className="bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
-                          >
-                            {scheduling ? 'Scheduling…' : scheduleTime ? 'Schedule →' : 'Post now →'}
-                          </button>
-                        </div>
-                        )}
-                        {scheduleError && <p className="mt-2 text-xs text-red-400">{scheduleError}</p>}
-                        {scheduleResult && (
-                          <p className="mt-2 text-xs text-green-400">
-                            ✓ {scheduleResult.status === 'scheduled' ? 'Scheduled!' : 'Posted!'} ID: {scheduleResult.post_id}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Comment generator */}
               <div ref={commentRef}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e8eaed]">💬 Reply to a post</h3>
@@ -2207,8 +2219,15 @@ export default function App() {
                         tone: {comment.tone}
                       </span>
                       <button
+                        onClick={addReplyToBoard}
+                        className={`ml-auto rounded-md border px-2 py-0.5 transition-colors ${replyBoardStatus ? 'border-[#50c878]/40 text-[#50c878]' : 'border-[#3a4250] text-[#e8eaed] hover:border-[#ff4500]/60 hover:text-[#ff6a33]'}`}
+                        title="Save this reply to the Board, in Ready to post"
+                      >
+                        {replyBoardStatus === 'added' ? '✓ Added to Ready to post' : replyBoardStatus === 'updated' ? '✓ Updated card in Ready to post' : '+ Board'}
+                      </button>
+                      <button
                         onClick={copyComment}
-                        className="ml-auto text-[#ff6a33] hover:underline"
+                        className="text-[#ff6a33] hover:underline"
                       >
                         {commentCopied ? '✓ Copied!' : 'Copy comment ↗'}
                       </button>
@@ -2216,9 +2235,7 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
+          </div>
         )}
       </div>
       )}
