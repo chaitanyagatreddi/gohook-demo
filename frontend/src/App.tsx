@@ -546,6 +546,36 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [zernioConnected, setZernioConnected] = useState(false)
   const [voiceReady, setVoiceReady] = useState(false)
+  const [communities, setCommunities] = useState<{ topic: string; list: { name: string; threads: number; example: string; url: string }[] } | null>(() => {
+    try { return JSON.parse(localStorage.getItem('gohook_communities') || 'null') } catch { return null }
+  })
+
+  useEffect(() => {
+    const onCommunities = (event: Event) => {
+      const next = (event as CustomEvent).detail
+      if (!next?.list?.length) return
+      setCommunities(next)
+      try { localStorage.setItem('gohook_communities', JSON.stringify(next)) } catch { /* storage full or blocked */ }
+    }
+    window.addEventListener('gohook:communities', onCommunities)
+    return () => window.removeEventListener('gohook:communities', onCommunities)
+  }, [])
+
+  async function refreshCommunities(topic: string) {
+    try {
+      const res = await fetch(`${API}/communities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ topic }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (!data.communities?.length) return
+      const next = { topic: data.topic, list: data.communities }
+      setCommunities(next)
+      try { localStorage.setItem('gohook_communities', JSON.stringify(next)) } catch { /* storage full or blocked */ }
+    } catch { /* the search itself already worked; this is extra */ }
+  }
   const [onTeam, setOnTeam] = useState(false)
   const [redditConnected, setRedditConnected] = useState(false)
 
@@ -922,6 +952,7 @@ export default function App() {
         setIntel(await res.json())
       }
       void track('scan', true, { expand, freshness })
+      void refreshCommunities(q)
       window.history.replaceState({}, '', `?q=${encodeURIComponent(q)}`)
       if (!session) {
         setSearchCount(prev => {
@@ -1267,6 +1298,28 @@ export default function App() {
               </button>
             ))}
           </nav>
+          {communities && communities.list.length > 0 && (
+            <div className="hidden md:block mx-3 mb-3 rounded-xl border border-[#242a33] bg-[#121417] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#858b95]">Be active in</p>
+              <p className="mt-0.5 truncate text-[11px] text-[#6b7280]" title={communities.topic}>for “{communities.topic}”</p>
+              <ul className="mt-2 space-y-1">
+                {communities.list.slice(0, 5).map(c => (
+                  <li key={c.name}>
+                    <a
+                      href={`https://reddit.com/${c.name}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={c.example}
+                      className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs text-[#d7dbe1] transition-colors hover:bg-[#1a1d23] hover:text-[#ff6a33]"
+                    >
+                      <span className="truncate">{c.name}</span>
+                      <span className="shrink-0 text-[10px] text-[#6b7280]">{c.threads} {c.threads === 1 ? 'thread' : 'threads'}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {session && (
             <div className="px-2 pb-2 md:px-3 md:pb-3">
               <button

@@ -1390,6 +1390,29 @@ async def find_discussing_subreddits(topic: str, source_url: str = "") -> list[d
     return ranked[:5]
 
 
+class CommunitiesRequest(BaseModel):
+    topic: str
+
+
+@app.post("/communities")
+async def communities(req: CommunitiesRequest, user_id: Optional[str] = Depends(get_current_user)):
+    """The five subreddits where this topic is being discussed right now."""
+    if not req.topic.strip():
+        raise HTTPException(status_code=400, detail="Tell us what you're researching.")
+    try:
+        groups = await find_discussing_subreddits(req.topic)
+    except Exception:
+        logger.exception("Could not find communities")
+        raise HTTPException(status_code=502, detail="Could not find communities. Please try again.")
+    return {
+        "topic": req.topic.strip(),
+        "communities": [
+            {"name": g["name"], "threads": len(g["example_threads"]), "example": (g["example_threads"] or [""])[0], "url": (g["thread_urls"] or [""])[0]}
+            for g in groups
+        ],
+    }
+
+
 @app.post("/ideate/angles")
 async def ideate_angles(req: IdeateAnglesRequest, user_id: Optional[str] = Depends(get_current_user)):
     if not req.url.strip():

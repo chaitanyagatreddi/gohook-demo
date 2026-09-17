@@ -50,6 +50,16 @@ export default function IdeateWireframe() {
     try {
       const result = await postJson<IdeasResult>('/ideate/angles', { url: url.trim(), takeaway })
       setIdeas(result)
+      if (result.subreddits?.length) {
+        // Ideate already found where this topic is discussed; share it with the sidebar.
+        const list = result.subreddits.slice(0, 5).map(sub => ({
+          name: sub.name,
+          threads: sub.example_threads.length,
+          example: sub.example_threads[0] || '',
+          url: sub.thread_urls?.[0] || '',
+        }))
+        window.dispatchEvent(new CustomEvent('gohook:communities', { detail: { topic: result.source_title, list } }))
+      }
       setSelected(result.angles[0]?.id || '')
       setStage('angles')
     } catch (e) {
