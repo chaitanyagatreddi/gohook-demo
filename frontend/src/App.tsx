@@ -289,6 +289,7 @@ export default function App() {
   const [draftError, setDraftError] = useState('')
   const [draftCopied, setDraftCopied] = useState(false)
   const [draftPlatform, setDraftPlatform] = useState<'reddit' | 'hn' | 'pg'>('reddit')
+  const [useVoice, setUseVoice] = useState(true)
 
   // Batch questions state
   const [questionBrief, setQuestionBrief] = useState('')
@@ -1010,7 +1011,7 @@ export default function App() {
       const res = await fetch(`${API}/draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea, context_snippets, style: draftPlatform }),
+        body: JSON.stringify({ idea, context_snippets, style: draftPlatform, use_voice: useVoice }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -1073,7 +1074,7 @@ export default function App() {
       const res = await fetch(`${API}/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify({ post_url: postUrl, intent, platform: commentPlatform }),
+        body: JSON.stringify({ post_url: postUrl, intent, platform: commentPlatform, use_voice: useVoice }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -1372,15 +1373,23 @@ export default function App() {
                       <span className="ml-2 text-xs font-normal text-[#ff6a33]">tone matched to scan</span>
                     )}
                   </h3>
-                  <select
-                    value={draftPlatform}
-                    onChange={e => setDraftPlatform(e.target.value as 'reddit' | 'hn' | 'pg')}
-                    className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
-                  >
-                    <option value="reddit">🟠 Reddit</option>
-                    <option value="hn">🔶 Hacker News tone</option>
-                    <option value="pg">✍️ Paul Graham tone</option>
-                  </select>
+                  <div className="flex items-center gap-2">
+                    {voiceReady && (
+                      <label className="flex items-center gap-1.5 text-xs text-[#9aa4b2] cursor-pointer select-none">
+                        <input type="checkbox" checked={useVoice} onChange={e => setUseVoice(e.target.checked)} className="accent-[#ff4500]" />
+                        Use my voice
+                      </label>
+                    )}
+                    <select
+                      value={draftPlatform}
+                      onChange={e => setDraftPlatform(e.target.value as 'reddit' | 'hn' | 'pg')}
+                      className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+                    >
+                      <option value="reddit">🟠 Reddit</option>
+                      <option value="hn">🔶 Hacker News tone</option>
+                      <option value="pg">✍️ Paul Graham tone</option>
+                    </select>
+                  </div>
                 </div>
                 <p className="text-xs text-[#9aa4b2] mt-1">
                   Drop a 2-line idea. We'll draft a {draftPlatform === 'hn' ? 'Hacker News style' : draftPlatform === 'pg' ? 'Paul Graham style' : 'Reddit style'} post that sounds human.
@@ -2244,14 +2253,22 @@ export default function App() {
               <div ref={commentRef}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e8eaed]">💬 Reply to a post</h3>
-                  <select
-                    value={commentPlatform}
-                    onChange={e => setCommentPlatform(e.target.value as 'reddit' | 'hn')}
-                    className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
-                  >
-                    <option value="reddit">🟠 Reddit</option>
-                    <option value="hn">🔶 Hacker News tone</option>
-                  </select>
+                  <div className="flex items-center gap-2">
+                    {voiceReady && (
+                      <label className="flex items-center gap-1.5 text-xs text-[#9aa4b2] cursor-pointer select-none">
+                        <input type="checkbox" checked={useVoice} onChange={e => setUseVoice(e.target.checked)} className="accent-[#ff4500]" />
+                        Use my voice
+                      </label>
+                    )}
+                    <select
+                      value={commentPlatform}
+                      onChange={e => setCommentPlatform(e.target.value as 'reddit' | 'hn')}
+                      className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+                    >
+                      <option value="reddit">🟠 Reddit</option>
+                      <option value="hn">🔶 Hacker News tone</option>
+                    </select>
+                  </div>
                 </div>
                 <p className="text-xs text-[#9aa4b2] mt-1">
                   Paste a Reddit URL + what you want to say. We fetch the post and draft a {commentPlatform === 'hn' ? 'Hacker News style' : 'Reddit style'} comment that fits.
@@ -2347,9 +2364,12 @@ export default function App() {
 
                 {comment && (
                   <div className="mt-4 border border-[#242a33] rounded-xl p-4 bg-[#14171c]">
-                    <p className="whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed">
-                      {comment.draft}
-                    </p>
+                    <textarea
+                      value={comment.draft}
+                      onChange={e => setComment({ ...comment, draft: e.target.value, word_count: e.target.value.trim().split(/\s+/).filter(Boolean).length })}
+                      rows={Math.max(4, comment.draft.split('\n').length + 1)}
+                      className="w-full bg-transparent resize-y whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#ff4500]/40 rounded-lg -m-1 p-1"
+                    />
                     <div className="mt-3 pt-3 border-t border-[#242a33] flex items-center gap-3 text-xs text-[#9aa4b2]">
                       <span>{comment.word_count} words</span>
                       <span className="bg-[#0b0d10] border border-[#242a33] text-[#9aa4b2] px-2 py-0.5 rounded">
