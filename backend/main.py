@@ -1676,7 +1676,7 @@ async def schedule(req: ScheduleRequest, user_id: Optional[str] = Depends(get_cu
         "platforms": [{
             "platform": "reddit",
             "accountId": zernio_account_id,
-            "options": {
+            "platformSpecificData": {
                 "subreddit": req.subreddit.lstrip("r/"),
                 "title": req.title or req.content[:100],
             }

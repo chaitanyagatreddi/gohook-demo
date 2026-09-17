@@ -1022,6 +1022,10 @@ export default function App() {
 
   async function schedulePost() {
     if (!draft) return
+    if (!subreddit.trim()) {
+      setScheduleError('Pick a subreddit first.')
+      return
+    }
     setScheduling(true)
     setScheduleError('')
     setScheduleResult(null)
