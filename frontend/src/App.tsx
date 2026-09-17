@@ -165,9 +165,9 @@ export default function App() {
   const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'reply' | 'graph' | 'settings' | 'usage' | 'audit'>(() => {
     // Coming back from signing into Reddit: land on the Graph page.
     try {
-      return new URLSearchParams(window.location.search).get('reddit') === 'connected' ? 'graph' : 'results'
+      return new URLSearchParams(window.location.search).get('reddit') === 'connected' ? 'graph' : 'audit'
     } catch {
-      return 'results'
+      return 'audit'
     }
   })
 
