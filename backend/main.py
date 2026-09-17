@@ -119,6 +119,24 @@ def require_scott_admin(identity: Optional[dict]) -> dict:
     return identity
 
 
+async def list_profiles() -> dict[str, dict]:
+    """Onboarding details (name, company, LinkedIn, role, goal), keyed by user id."""
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/profiles",
+            params={"select": "id,full_name,company,linkedin_url,role,goal"},
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            },
+            timeout=15,
+        )
+    if res.status_code >= 400:
+        logger.error("Could not list profiles: %s", res.status_code)
+        return {}
+    return {row["id"]: row for row in res.json()}
+
+
 async def list_supabase_users() -> List[dict]:
     async with httpx.AsyncClient() as client:
         res = await client.get(
@@ -295,6 +313,7 @@ async def admin_usage(days: int = 30, identity: Optional[dict] = Depends(get_cur
     try:
         usage = await read_usage(days)
         users = await list_supabase_users()
+        profiles = await list_profiles()
     except Exception:
         logger.exception("Could not read usage")
         raise HTTPException(status_code=502, detail="Could not load usage. Please try again.")
@@ -304,6 +323,11 @@ async def admin_usage(days: int = 30, identity: Optional[dict] = Depends(get_cur
             "email": str(user.get("email", "")).strip().lower(),
             "created_at": user.get("created_at"),
             "last_sign_in_at": user.get("last_sign_in_at"),
+            "full_name": (profiles.get(user.get("id")) or {}).get("full_name"),
+            "company": (profiles.get(user.get("id")) or {}).get("company"),
+            "linkedin_url": (profiles.get(user.get("id")) or {}).get("linkedin_url"),
+            "role": (profiles.get(user.get("id")) or {}).get("role"),
+            "goal": (profiles.get(user.get("id")) or {}).get("goal"),
         }
         for user in users
     ]

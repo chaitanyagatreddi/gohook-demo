@@ -9,14 +9,15 @@ type Props = {
 const OnboardingProfile = ({ onDone }: Props) => {
   const [name, setName] = useState('')
   const [company, setCompany] = useState('')
+  const [linkedin, setLinkedin] = useState('')
   const [role, setRole] = useState('')
   const [goal, setGoal] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   async function save() {
-    if (!name.trim() || !company.trim()) {
-      setError('Name and company are required to continue.')
+    if (!name.trim() || !company.trim() || !linkedin.trim()) {
+      setError('Name, company and LinkedIn are required to continue.')
       return
     }
     setSaving(true)
@@ -30,7 +31,7 @@ const OnboardingProfile = ({ onDone }: Props) => {
     }
     const { error: dbError } = await supabase
       .from('profiles')
-      .update({ full_name: name.trim(), company: company.trim(), role: role || null, goal: goal || null })
+      .update({ full_name: name.trim(), company: company.trim(), linkedin_url: linkedin.trim(), role: role || null, goal: goal || null })
       .eq('id', userId)
     setSaving(false)
     if (dbError) {
@@ -67,6 +68,17 @@ const OnboardingProfile = ({ onDone }: Props) => {
               value={company}
               onChange={e => setCompany(e.target.value)}
               placeholder="Acme Inc."
+              className="rounded-lg border border-[#242a33] bg-[#0b0d10] px-3.5 py-3 text-sm text-[#e8eaed] placeholder:text-[#525862] focus:outline-none focus:border-[#ff6a33]"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="ob-linkedin" className="text-xs font-medium text-[#e8eaed]">LinkedIn URL <span className="text-[#ff6a33]">*</span></label>
+            <input
+              id="ob-linkedin"
+              value={linkedin}
+              onChange={e => setLinkedin(e.target.value)}
+              placeholder="https://www.linkedin.com/in/yourname"
               className="rounded-lg border border-[#242a33] bg-[#0b0d10] px-3.5 py-3 text-sm text-[#e8eaed] placeholder:text-[#525862] focus:outline-none focus:border-[#ff6a33]"
             />
           </div>
@@ -111,7 +123,7 @@ const OnboardingProfile = ({ onDone }: Props) => {
           >
             {saving ? 'Saving…' : 'Continue →'}
           </button>
-          <p className="text-center text-[11px] text-[#525862]">Name and company are required to continue.</p>
+          <p className="text-center text-[11px] text-[#525862]">Name, company and LinkedIn are required to continue.</p>
         </form>
       </div>
     </div>

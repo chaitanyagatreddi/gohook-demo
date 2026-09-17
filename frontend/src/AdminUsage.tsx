@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { authHeaders } from './supabaseClient'
 
 type EventRow = { user_id: string | null; event: string; ok: boolean; meta: Record<string, unknown>; created_at: string }
-type UserRow = { id: string; email: string; created_at?: string; last_sign_in_at?: string }
+type UserRow = {
+  id: string; email: string; created_at?: string; last_sign_in_at?: string
+  full_name?: string; company?: string; linkedin_url?: string; role?: string; goal?: string
+}
 type RedditRow = { user_id: string; reddit_username?: string; status?: string; meta?: { karma?: number }; last_synced_at?: string }
 type VoiceRow = { user_id: string; source?: string; sample_count?: number }
 type Member = { email: string; role: string; added_by?: string }
@@ -247,6 +250,13 @@ export default function AdminUsage({ api }: { api: string }) {
                   <td className="py-2 text-[#e8eaed]">
                     {user.email}
                     <span className="block text-[11px] text-[#6b7280]">joined {ago(user.created_at)} · signed in {ago(user.last_sign_in_at)}</span>
+                    {(user.full_name || user.company) && (
+                      <span className="block text-[11px] text-[#9aa4b2]">
+                        {user.full_name}{user.full_name && user.company ? ' · ' : ''}{user.company}
+                        {user.role ? ` · ${user.role}` : ''}{user.goal ? ` · ${user.goal}` : ''}
+                        {user.linkedin_url ? <> · <a href={user.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-[#ff6a33] hover:underline">LinkedIn</a></> : ''}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 text-right text-xs">
                     {reddit.get(user.id)?.status === 'active'
