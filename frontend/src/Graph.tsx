@@ -139,13 +139,18 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
   async function connectReddit() {
     setRedditBusy('connecting')
     setRedditNote('')
+    // Opened synchronously, on the click itself — mobile browsers block or
+    // leave a black about:blank tab when window.open happens after an await.
+    const tab = window.open('', '_blank', 'noopener')
     try {
       const res = await fetch(`${API}/reddit/connect`, { method: 'POST', headers: await authHeaders() })
       if (!res.ok) throw new Error((await res.json()).detail || 'Could not start')
       const { url } = await res.json()
-      window.open(url, '_blank', 'noopener')
+      if (tab) tab.location.href = url
+      else window.open(url, '_blank', 'noopener')
       setRedditNote('Finish signing in on the new tab, then come back and press Check.')
     } catch (e) {
+      tab?.close()
       setRedditNote(e instanceof Error ? e.message : 'Could not start connecting.')
     } finally {
       setRedditBusy(null)

@@ -1271,7 +1271,7 @@ export default function App() {
               Your knowledge graph for Reddit.
             </p>
           </div>
-          <nav className="flex-1 overflow-y-auto px-2 md:px-3 flex flex-row md:flex-col gap-1.5">
+          <nav className="flex-1 overflow-x-auto md:overflow-x-visible overflow-y-auto px-2 md:px-3 flex flex-row md:flex-col gap-1.5">
             {([
               { key: 'results', label: 'Ask', icon: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></> },
               { key: 'board', label: 'Board', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },

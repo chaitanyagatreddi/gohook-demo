@@ -51,12 +51,18 @@ export default function Audit({ api }: { api: string }) {
   async function connectReddit() {
     setConnecting(true)
     setError('')
+    // Open the tab synchronously, on the click itself — mobile browsers only
+    // allow window.open without blocking (or a black, stuck-on-about:blank
+    // tab) when it happens inside the user gesture, not after an await.
+    const tab = window.open('', '_blank', 'noopener')
     try {
       const res = await fetch(`${api}/reddit/connect`, { method: 'POST', headers: await authHeaders() })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Could not start connecting.')
-      window.open(data.url, '_blank', 'noopener')
+      if (tab) tab.location.href = data.url
+      else window.open(data.url, '_blank', 'noopener')
     } catch (e) {
+      tab?.close()
       setError(e instanceof Error ? e.message : 'Could not start connecting.')
     } finally {
       setConnecting(false)
