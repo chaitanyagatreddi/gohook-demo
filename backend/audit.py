@@ -23,11 +23,14 @@ BUYING_INTENT = re.compile(
 WEIGHTS = {
     "earned_mentions": 25,
     "coverage_gap": 20,
-    "buying_intent": 20,
+    "buying_intent": 30,
     "competitor_gap": 15,
     "account_readiness": 10,
-    "recency": 10,
 }
+
+# Mentions from years ago still rank, but they are not the same as being part of
+# the conversation now, so they are worth less rather than scored separately.
+STALE_FLOOR = 0.4
 
 # Old threads still rank in Google, but they say nothing about whether the brand
 # is part of the conversation now.
@@ -112,36 +115,52 @@ async def run_audit(
     account_years = float((profile or {}).get("account_age_years") or 0)
 
     recent = [r for r in earned if _is_recent(r)]
+    # Search results do not always carry a date. Penalising a brand for that
+    # would be guessing, so an undated set counts as current.
+    dated = [r for r in earned if r.get("date")]
+    freshness = 1.0 if not dated else STALE_FLOOR + (1 - STALE_FLOOR) * (len(recent) / len(dated))
+
+    # When neither side shows up in the buying threads there is no gap to measure,
+    # so the part is dropped and the score is out of what is left.
+    competitor_measured = bool(competitors) and (competitor_best > 0 or len(brand_in_intent) > 0)
 
     parts = {
-        # Three earned mentions is where a brand stops looking invisible.
-        "earned_mentions": _score_part(len(earned), 3, WEIGHTS["earned_mentions"]),
+        # Eight earned mentions is a brand people actually bring up. Three is a start.
+        # Worth less when they are all old.
+        "earned_mentions": round(_score_part(len(earned), 8, WEIGHTS["earned_mentions"]) * freshness),
         # Being in half the subreddits that discuss your category is a fair bar.
         "coverage_gap": _score_part(len(present_subs), max(1, len(category_subs) * 0.5), WEIGHTS["coverage_gap"]),
         "buying_intent": _score_part(len(brand_in_intent), 3, WEIGHTS["buying_intent"]),
         # Full marks only when you appear at least as often as your strongest competitor.
-        "competitor_gap": _score_part(len(brand_in_intent), max(1, competitor_best), WEIGHTS["competitor_gap"]),
+        "competitor_gap": _score_part(len(brand_in_intent), max(1, competitor_best), WEIGHTS["competitor_gap"]) if competitor_measured else 0,
         "account_readiness": min(
             WEIGHTS["account_readiness"],
             (5 if karma >= 100 else 3 if karma >= 20 else 0) + (5 if account_years >= 1 else 3 if account_years >= 0.5 else 0),
         ),
-        "recency": _score_part(len(recent), 2, WEIGHTS["recency"]),
     }
-    score = sum(parts.values())
+    out_of = sum(WEIGHTS.values()) - (0 if competitor_measured else WEIGHTS["competitor_gap"])
+    score = round(sum(parts.values()) / out_of * 100)
 
     return {
         "brand": brand,
         "category": category,
         "score": score,
+        "out_of": out_of,
+        "competitor_measured": competitor_measured,
         "parts": [
             {"key": key, "label": label, "score": parts[key], "out_of": WEIGHTS[key], "detail": detail}
             for key, label, detail in [
-                ("earned_mentions", "Earned mentions", f"{len(earned)} threads about you that you didn't write" + (f", {len(self_posted)} you did" if self_posted else "")),
+                ("earned_mentions", "Earned mentions",
+                 f"{len(earned)} threads about you that you didn't write"
+                 + (f", {len(self_posted)} you did" if self_posted else "")
+                 + (f" · only {len(recent)} in the last {FRESH_MONTHS} months" if dated and len(recent) < len(dated) else "")),
                 ("coverage_gap", "Coverage gap", f"You appear in {len(present_subs)} of {len(category_subs)} communities discussing {category}"),
                 ("buying_intent", "Buying-intent threads", f"Named in {len(brand_in_intent)} of {len(intent)} threads where people are choosing"),
-                ("competitor_gap", "Competitor gap", f"Your best-covered competitor appears in {competitor_best}" + (f", you in {len(brand_in_intent)}" if competitors else " — add competitors to compare")),
+                ("competitor_gap", "Competitor gap",
+                 f"Your best-covered competitor appears in {competitor_best} of these threads, you in {len(brand_in_intent)}" if competitor_measured
+                 else "Nobody is in these threads yet, yours or theirs, so this isn't counted" if competitors
+                 else "Add competitors to compare"),
                 ("account_readiness", "Account readiness", f"{karma} karma, account {account_years:.1f} years old" if profile else "Connect Reddit to check this"),
-                ("recency", "Recency", f"{len(recent)} of {len(earned)} earned mentions in the last {FRESH_MONTHS} months"),
             ]
         ],
         "missing_communities": missing_subs[:10],

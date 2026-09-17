@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { authHeaders } from './supabaseClient'
 
@@ -25,12 +25,41 @@ const verdict = (score: number) =>
 
 /** The Reddit Presence Score: what a brand has, what it is missing, what to do next. */
 export default function Audit({ api }: { api: string }) {
+  const [reddit, setReddit] = useState<'checking' | 'yes' | 'no'>('checking')
+  const [connecting, setConnecting] = useState(false)
   const [brand, setBrand] = useState('')
   const [category, setCategory] = useState('')
   const [competitors, setCompetitors] = useState('')
   const [report, setReport] = useState<Report | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  async function checkReddit() {
+    try {
+      const res = await fetch(`${api}/reddit/status`, { headers: await authHeaders() })
+      const data = res.ok ? await res.json() : {}
+      setReddit(data.connected || data.status === 'active' ? 'yes' : 'no')
+    } catch {
+      setReddit('no')
+    }
+  }
+
+  useEffect(() => { void checkReddit() }, [api])
+
+  async function connectReddit() {
+    setConnecting(true)
+    setError('')
+    try {
+      const res = await fetch(`${api}/reddit/connect`, { method: 'POST', headers: await authHeaders() })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Could not start connecting.')
+      window.open(data.url, '_blank', 'noopener')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start connecting.')
+    } finally {
+      setConnecting(false)
+    }
+  }
 
   async function run() {
     setError(''); setBusy(true); setReport(null)
@@ -63,6 +92,23 @@ export default function Audit({ api }: { api: string }) {
         </p>
       </div>
 
+      {reddit === 'no' && (
+        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-[#ff4500]/30 bg-[#ff4500]/5 p-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-[#e8eaed]">Connect Reddit to run the audit</p>
+            <p className="mt-1 text-xs text-[#9aa4b2]">The score checks your karma and account age, so it knows which communities you can post in today.</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={connectReddit} disabled={connecting} className="rounded-lg bg-[#ff4500] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#ff6a33] disabled:opacity-40">
+              {connecting ? 'Opening Reddit…' : 'Connect Reddit'}
+            </button>
+            <button onClick={checkReddit} className="rounded-lg border border-[#30353e] px-3 py-2 text-xs font-semibold text-[#e8eaed] transition-colors hover:border-[#ff4500]/60">
+              Check again
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs text-[#9aa4b2]">
           Your brand
@@ -74,7 +120,7 @@ export default function Audit({ api }: { api: string }) {
           />
         </label>
         <label className="text-xs text-[#9aa4b2]">
-          What you sell
+          What you sell <span className="text-[#6b7280]">(how a buyer would say it)</span>
           <input
             value={category}
             onChange={e => setCategory(e.target.value)}
@@ -96,7 +142,7 @@ export default function Audit({ api }: { api: string }) {
       <div className="mt-3 flex items-center gap-3">
         <button
           onClick={run}
-          disabled={busy || !brand.trim()}
+          disabled={busy || !brand.trim() || reddit === 'no'}
           className="rounded-lg bg-[#ff4500] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#ff6a33] disabled:opacity-40"
         >
           {busy ? 'Checking Reddit…' : 'Get my score →'}
