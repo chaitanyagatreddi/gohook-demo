@@ -173,9 +173,9 @@ export default function Audit({ api }: { api: string }) {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: EASE }}
-          className="mt-8 space-y-4"
+          className="mt-8 grid gap-4 lg:grid-cols-2 lg:items-start"
         >
-          <div className="rounded-2xl border border-[#242a33] bg-[#14171c] p-6">
+          <div className="rounded-2xl border border-[#242a33] bg-[#14171c] p-6 lg:col-span-2">
             <p className="text-[11px] uppercase tracking-[0.1em] text-[#858b95]">{report.brand}</p>
             <div className="mt-2 flex items-end gap-3">
               <motion.span
