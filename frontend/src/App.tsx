@@ -10,6 +10,7 @@ import IdeateWireframe from './IdeateWireframe'
 import { supabase, authHeaders } from './supabaseClient'
 import type { Session } from '@supabase/supabase-js'
 import OnboardingDeck from './OnboardingDeck'
+import OnboardingProfile from './OnboardingProfile'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -614,6 +615,16 @@ export default function App() {
 
   useEffect(() => {
     if (session) setShowAuthGate(false)
+  }, [session])
+
+  const [needsProfile, setNeedsProfile] = useState(false)
+  useEffect(() => {
+    if (!session) {
+      setNeedsProfile(false)
+      return
+    }
+    supabase.from('profiles').select('company').eq('id', session.user.id).maybeSingle()
+      .then(({ data }) => setNeedsProfile(!data?.company))
   }, [session])
 
   useEffect(() => {
@@ -1323,7 +1334,11 @@ export default function App() {
       )}
 
       <main className="flex-1 min-w-0 pb-16 md:pb-0">
-      {showAuthGate && !session ? (
+      {session && needsProfile ? (
+        <div className="max-w-3xl mx-auto px-4 py-10">
+          <OnboardingProfile onDone={() => setNeedsProfile(false)} />
+        </div>
+      ) : showAuthGate && !session ? (
         <div className="max-w-3xl mx-auto px-4 py-10">
           <OnboardingDeck
             authEmail={authEmail}
