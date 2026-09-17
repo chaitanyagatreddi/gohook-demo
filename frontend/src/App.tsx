@@ -1526,12 +1526,26 @@ export default function App() {
         {/* Hero + search bar */}
         {!intel && !loading && searches.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
-            <h2 className="text-3xl sm:text-4xl font-semibold tracking-[-0.03em] leading-tight">
-              Your knowledge graph<br />
-              <span className="bg-gradient-to-r from-[#ff4500] to-[#ff6a33] bg-clip-text text-transparent">
-                for Reddit.
-              </span>
-            </h2>
+            {session ? (
+              <>
+                <h2 className="text-3xl sm:text-4xl font-semibold tracking-[-0.03em] leading-tight">
+                  Good to see you, {(session.user.user_metadata?.full_name as string | undefined)?.split(' ')[0] || session.user.email?.split('@')[0]}
+                </h2>
+                <button
+                  onClick={() => setView('audit')}
+                  className="mt-2 text-sm font-medium bg-gradient-to-r from-[#ff4500] to-[#ff6a33] bg-clip-text text-transparent hover:underline"
+                >
+                  Reddit Presence Score →
+                </button>
+              </>
+            ) : (
+              <h2 className="text-3xl sm:text-4xl font-semibold tracking-[-0.03em] leading-tight">
+                Your knowledge graph<br />
+                <span className="bg-gradient-to-r from-[#ff4500] to-[#ff6a33] bg-clip-text text-transparent">
+                  for Reddit.
+                </span>
+              </h2>
+            )}
           </div>
         )}
 
@@ -2215,20 +2229,14 @@ export default function App() {
               <div ref={commentRef}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e8eaed]">💬 Reply to a post</h3>
-                  <div className="flex gap-1 bg-[#14171c] border border-[#242a33] rounded-lg p-1">
-                    <button
-                      onClick={() => setCommentPlatform('reddit')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${commentPlatform === 'reddit' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      🟠 Reddit
-                    </button>
-                    <button
-                      onClick={() => setCommentPlatform('hn')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${commentPlatform === 'hn' ? 'bg-[#ff6600] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      🔶 HN
-                    </button>
-                  </div>
+                  <select
+                    value={commentPlatform}
+                    onChange={e => setCommentPlatform(e.target.value as 'reddit' | 'hn')}
+                    className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+                  >
+                    <option value="reddit">🟠 Reddit</option>
+                    <option value="hn">🔶 Hacker News tone</option>
+                  </select>
                 </div>
                 <p className="text-xs text-[#9aa4b2] mt-1">
                   Paste a Reddit URL + what you want to say. We fetch the post and draft a {commentPlatform === 'hn' ? 'Hacker News style' : 'Reddit style'} comment that fits.

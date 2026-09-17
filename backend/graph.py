@@ -188,10 +188,10 @@ async def _self_node_id(client: httpx.AsyncClient, user_id: str) -> str:
 
 async def link_user_to_threads(user_id: str, node_ids: list[str], edge_type: str) -> None:
     """
-    Record something the user did with these threads — 'saved', 'cited' or 'authored'.
+    Record something the user did with these threads — 'saved', 'cited', 'authored' or 'commented'.
     Safe to call twice; duplicates are ignored.
     """
-    if not user_id or not node_ids or edge_type not in ("saved", "cited", "authored"):
+    if not user_id or not node_ids or edge_type not in ("saved", "cited", "authored", "commented"):
         return
 
     async with httpx.AsyncClient() as client:
@@ -376,10 +376,11 @@ async def read_graph(user_id: Optional[str], limit: int = 300) -> dict:
     drawn = {n["id"] for n in shared_nodes} | {n["id"] for n in topic_nodes}
 
     # How each thread got into this person's graph: from a question they asked
-    # ('cited'), from their Board ('saved'), or from their own Reddit ('authored').
+    # ('cited'), from their Board ('saved'), from their own Reddit ('authored'),
+    # or a thread they commented on ('commented').
     how = {}
     for e in user_edges:
-        if e["type"] in ("cited", "saved", "authored") and e["to_table"] == "nodes":
+        if e["type"] in ("cited", "saved", "authored", "commented") and e["to_table"] == "nodes":
             how.setdefault(e["to_id"], []).append(e["type"])
 
     nodes = [

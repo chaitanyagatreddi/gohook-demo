@@ -17,18 +17,19 @@ export type GraphNode = {
   kind: 'thread' | 'subreddit' | 'topic' | 'author'
   label: string
   permalink?: string
-  how?: string[]   // 'cited' = from a question, 'saved' = from the Board, 'authored' = your own Reddit
+  how?: string[]   // 'cited' = from a question, 'saved' = from the Board, 'authored' = your own Reddit, 'commented' = threads you replied to
   over_18?: boolean
   score?: number
   captured_at?: string
 }
 
-// The four ways to look at the same graph.
+// The five ways to look at the same graph.
 const VIEWS = [
   { key: 'all', label: 'Everything' },
   { key: 'cited', label: 'Searched' },
   { key: 'saved', label: 'Saved' },
   { key: 'authored', label: 'My Reddit' },
+  { key: 'commented', label: 'Commented' },
 ] as const
 type ViewKey = typeof VIEWS[number]['key']
 export type GraphEdge = { from: string; to: string; type: string }
@@ -509,8 +510,8 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
             <button
               key={v.key}
               onClick={() => { setSlice(v.key); setSelected(null) }}
-              disabled={v.key === 'authored' && !reddit?.connected && !data?.nodes.some(n => (n.how || []).includes('authored'))}
-              title={v.key === 'authored' ? 'Needs your Reddit account connected' : undefined}
+              disabled={(v.key === 'authored' || v.key === 'commented') && !reddit?.connected && !data?.nodes.some(n => (n.how || []).includes(v.key))}
+              title={(v.key === 'authored' || v.key === 'commented') ? 'Needs your Reddit account connected' : undefined}
               className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${
                 slice === v.key
                   ? 'bg-[#24272d] text-[#f4f5f6] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
@@ -752,7 +753,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
                       <dt className="text-[#9aa4b2]">came from</dt>
                       <dd className="text-right">
                         {selectedNode.how
-                          .map(h => (h === 'cited' ? 'a question' : h === 'saved' ? 'your Board' : 'your Reddit'))
+                          .map(h => (h === 'cited' ? 'a question' : h === 'saved' ? 'your Board' : h === 'commented' ? 'a comment you posted' : 'your Reddit'))
                           .join(', ')}
                       </dd>
                     </div>

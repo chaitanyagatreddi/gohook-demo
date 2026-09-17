@@ -627,15 +627,24 @@ async def reddit_sync(user_id: Optional[str] = Depends(require_user)):
 
     try:
         posts = await composio_reddit.get_own_posts(user_id, username)
-        if not posts:
-            return {"added": 0, "username": username}
+        comments = await composio_reddit.get_own_comments(saved["connected_account_id"], username)
 
-        node_ids = await ingest_threads(posts)
-        if node_ids:
-            await link_user_to_threads(user_id, list(node_ids.values()), "authored")
-            await tag_threads(user_id, posts, node_ids)
+        added = 0
+        if posts:
+            post_node_ids = await ingest_threads(posts)
+            if post_node_ids:
+                await link_user_to_threads(user_id, list(post_node_ids.values()), "authored")
+                await tag_threads(user_id, posts, post_node_ids)
+                added += len(post_node_ids)
+        if comments:
+            comment_node_ids = await ingest_threads(comments)
+            if comment_node_ids:
+                await link_user_to_threads(user_id, list(comment_node_ids.values()), "commented")
+                await tag_threads(user_id, comments, comment_node_ids)
+                added += len(comment_node_ids)
+
         await composio_reddit.mark_synced(user_id)
-        return {"added": len(node_ids), "username": username}
+        return {"added": added, "username": username}
     except Exception:
         logger.exception("Could not pull this person's Reddit posts")
         raise HTTPException(status_code=502, detail="Could not read your Reddit posts right now.")

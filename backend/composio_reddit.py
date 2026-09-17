@@ -190,6 +190,64 @@ async def get_post_json(connected_account_id: str, permalink: str):
         return None
 
 
+async def get_own_comments(connected_account_id: str, username: str, limit: int = MAX_OWN_POSTS) -> list[dict]:
+    """
+    The person's own comments, read straight from Reddit's own listing —
+    there's no Composio tool for this, but the same proxy used by
+    get_post_json and get_profile reaches it directly.
+
+    Returns results shaped like the rest of the app expects (title/permalink/
+    subreddit_name_prefixed/url), title being the parent thread's title so
+    the comment can be ingested as a thread node like any other.
+    """
+    if not username:
+        return []
+
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
+                f"{API}/tools/execute/proxy",
+                headers=_headers(),
+                json={
+                    "endpoint": f"/user/{username}/comments.json?limit={limit}&raw_json=1",
+                    "method": "GET",
+                    "connected_account_id": connected_account_id,
+                },
+                timeout=45,
+            )
+            res.raise_for_status()
+            data = res.json().get("data")
+    except Exception:
+        logger.exception("Could not read this person's own comments")
+        return []
+
+    listing = data[0] if isinstance(data, list) and data else data
+    if not isinstance(listing, dict):
+        return []
+    children = (listing.get("data") or {}).get("children") or []
+
+    comments = []
+    for entry in children[:limit]:
+        item = entry.get("data") if isinstance(entry, dict) else None
+        if not isinstance(item, dict):
+            continue
+        link_permalink = item.get("link_permalink") or item.get("permalink") or ""
+        if not link_permalink:
+            continue
+        subreddit = item.get("subreddit_name_prefixed") or (f"r/{item['subreddit']}" if item.get("subreddit") else "")
+        comments.append({
+            "title": item.get("link_title", ""),
+            "selftext": item.get("body", "") or "",
+            "score": item.get("link_score", 0),
+            "permalink": link_permalink,
+            "subreddit_name_prefixed": subreddit,
+            "url": item.get("link_url") or f"https://reddit.com{link_permalink}",
+            "author": item.get("author", username),
+            "over_18": bool(item.get("over_18")),
+        })
+    return comments
+
+
 async def get_own_posts(user_id: str, username: str, limit: int = MAX_OWN_POSTS) -> list[dict]:
     """
     The person's own posts.
