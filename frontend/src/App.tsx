@@ -1357,26 +1357,15 @@ export default function App() {
                       <span className="ml-2 text-xs font-normal text-[#ff6a33]">tone matched to scan</span>
                     )}
                   </h3>
-                  <div className="flex gap-1 bg-[#14171c] border border-[#242a33] rounded-lg p-1">
-                    <button
-                      onClick={() => setDraftPlatform('reddit')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'reddit' ? 'bg-[#ff4500] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      🟠 Reddit
-                    </button>
-                    <button
-                      onClick={() => setDraftPlatform('hn')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'hn' ? 'bg-[#ff6600] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      🔶 HN
-                    </button>
-                    <button
-                      onClick={() => setDraftPlatform('pg')}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${draftPlatform === 'pg' ? 'bg-[#3a4250] text-white' : 'text-[#9aa4b2] hover:text-[#e8eaed]'}`}
-                    >
-                      ✍️ PG
-                    </button>
-                  </div>
+                  <select
+                    value={draftPlatform}
+                    onChange={e => setDraftPlatform(e.target.value as 'reddit' | 'hn' | 'pg')}
+                    className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
+                  >
+                    <option value="reddit">🟠 Reddit</option>
+                    <option value="hn">🔶 Hacker News tone</option>
+                    <option value="pg">✍️ Paul Graham tone</option>
+                  </select>
                 </div>
                 <p className="text-xs text-[#9aa4b2] mt-1">
                   Drop a 2-line idea. We'll draft a {draftPlatform === 'hn' ? 'Hacker News style' : draftPlatform === 'pg' ? 'Paul Graham style' : 'Reddit style'} post that sounds human.
@@ -1433,9 +1422,12 @@ export default function App() {
 
                 {draft && (
                   <div className="mt-4 border border-[#242a33] rounded-xl p-4 bg-[#14171c]">
-                    <p className="whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed">
-                      {draft.draft}
-                    </p>
+                    <textarea
+                      value={draft.draft}
+                      onChange={e => setDraft({ ...draft, draft: e.target.value, word_count: e.target.value.trim().split(/\s+/).filter(Boolean).length })}
+                      rows={Math.max(4, draft.draft.split('\n').length + 1)}
+                      className="w-full bg-transparent resize-y whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#ff4500]/40 rounded-lg -m-1 p-1"
+                    />
                     <div className="mt-3 pt-3 border-t border-[#242a33] flex items-center gap-3 text-xs text-[#9aa4b2]">
                       <span>{draft.word_count} words</span>
                       <span className="bg-[#0b0d10] border border-[#242a33] text-[#9aa4b2] px-2 py-0.5 rounded">
