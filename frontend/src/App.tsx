@@ -4,6 +4,7 @@ import { upsertReplyCard } from './boardUpsert'
 import VoiceSetup from './VoiceSetup'
 import AdminUsage from './AdminUsage'
 import Audit from './Audit'
+import SlackSetup from './SlackSetup'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase, authHeaders } from './supabaseClient'
@@ -1813,6 +1814,9 @@ export default function App() {
               redditConnected={redditConnected}
               onSaved={voice => setVoiceReady(Boolean(voice))}
             />
+            <h2 className="mt-8 text-lg font-semibold text-[#e8eaed] mb-4">Alerts</h2>
+            <SlackSetup api={API} signedIn={!!session} />
+
             <h2 className="mt-8 text-lg font-semibold text-[#e8eaed] mb-4">API Keys</h2>
             <div className="border border-[#242a33] bg-[#14171c] rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">

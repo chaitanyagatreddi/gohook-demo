@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, verified_reddit_threads
 from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
-from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, read_usage, read_members, save_member, delete_member
+from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -311,6 +311,31 @@ async def admin_usage(days: int = 30, identity: Optional[dict] = Depends(get_cur
     return usage
 
 
+def _threads_since(before: dict, now: dict) -> list[dict]:
+    """Buying-intent threads in this run that weren't in the last one."""
+    seen = {t.get("url") for t in (before.get("opportunities") or [])}
+    return [t for t in (now.get("opportunities") or []) if t.get("url") not in seen][:5]
+
+
+def _audit_slack_message(report: dict) -> str:
+    previous = report.get("previous") or {}
+    change = previous.get("change")
+    headline = f"*{report['brand']}* Reddit Presence Score: *{report['score']}/100*"
+    if change:
+        headline += f" ({'+' if change > 0 else ''}{change} since last run)"
+    lines = [headline]
+    missing = report.get("missing_communities") or []
+    if missing:
+        lines.append(f"Not in {len(missing)} communities discussing {report.get('category') or 'your category'}: {', '.join(missing[:4])}")
+    fresh = previous.get("new_threads") or report.get("opportunities") or []
+    if fresh:
+        lines.append("Threads you're missing:")
+        for thread in fresh[:3]:
+            answered = thread.get("competitors_here") or []
+            lines.append(f"• <{thread.get('url')}|{(thread.get('title') or '')[:80]}>" + (f" — {', '.join(answered)} answered here" if answered else ""))
+    return "\n".join(lines)
+
+
 class AuditRequest(BaseModel):
     brand: str
     category: str = ""
@@ -342,6 +367,21 @@ async def audit(req: AuditRequest, identity: Optional[dict] = Depends(get_curren
         await record_event(identity["id"], "audit", False, {"why": _http_detail(exc)})
         raise HTTPException(status_code=502, detail="Could not finish the audit. Please try again.")
 
+    previous = await read_audit_runs(identity["id"], req.brand.strip(), limit=1)
+    if previous:
+        before = previous[0]
+        report["previous"] = {
+            "score": before.get("score"),
+            "change": report["score"] - int(before.get("score") or 0),
+            "when": before.get("created_at"),
+            "new_threads": _threads_since(before.get("report") or {}, report),
+        }
+    await save_audit_run(identity["id"], report)
+
+    hook = await read_slack_hook(identity["id"])
+    if hook and hook.get("enabled"):
+        await send_to_slack(hook["webhook_url"], _audit_slack_message(report))
+
     await record_event(identity["id"], "audit", True, {
         "brand": req.brand.strip()[:40],
         "score": report["score"],
@@ -349,6 +389,49 @@ async def audit(req: AuditRequest, identity: Optional[dict] = Depends(get_curren
         "missing": len(report["missing_communities"]),
     })
     return report
+
+
+class SlackRequest(BaseModel):
+    webhook_url: str
+
+
+@app.get("/audit/history")
+async def audit_history(brand: str = "", identity: Optional[dict] = Depends(get_current_identity)):
+    """Past runs, newest first, so a score can be read as a trend."""
+    if not identity:
+        return {"runs": []}
+    runs = await read_audit_runs(identity["id"], brand or None)
+    return {"runs": [{"brand": r["brand"], "score": r["score"], "created_at": r["created_at"]} for r in runs]}
+
+
+@app.get("/slack")
+async def slack_get(identity: Optional[dict] = Depends(get_current_identity)):
+    if not identity:
+        return {"connected": False}
+    hook = await read_slack_hook(identity["id"])
+    return {"connected": bool(hook and hook.get("enabled"))}
+
+
+@app.post("/slack")
+async def slack_save(req: SlackRequest, identity: Optional[dict] = Depends(get_current_identity)):
+    """Store a Slack incoming webhook and say hello through it."""
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to connect Slack.")
+    url = req.webhook_url.strip()
+    if not url.startswith("https://hooks.slack.com/"):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Slack incoming webhook URL.")
+    if not await send_to_slack(url, "GoHook is connected. Audit alerts will arrive here."):
+        raise HTTPException(status_code=400, detail="Slack didn't accept that webhook. Check the URL and try again.")
+    await save_slack_hook(identity["id"], url)
+    return {"connected": True}
+
+
+@app.delete("/slack")
+async def slack_delete(identity: Optional[dict] = Depends(get_current_identity)):
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to manage Slack.")
+    await delete_slack_hook(identity["id"])
+    return {"connected": False}
 
 
 class MemberRequest(BaseModel):

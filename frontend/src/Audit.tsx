@@ -14,6 +14,7 @@ type Report = {
   self_posted: number
   opportunities: Thread[]
   competitors: Record<string, number>
+  previous?: { score: number; change: number; when: string; new_threads: Thread[] }
 }
 
 const EASE = [0.22, 0.61, 0.36, 1] as const
@@ -189,6 +190,14 @@ export default function Audit({ api }: { api: string }) {
               <span className="pb-1.5 text-sm text-[#6b7280]">of 100</span>
             </div>
             <p className="mt-2 text-sm text-[#e8eaed]">{verdict(report.score)}</p>
+            {report.previous && (
+              <p className="mt-1 text-xs">
+                <span className={report.previous.change > 0 ? 'text-[#50c878]' : report.previous.change < 0 ? 'text-amber-300' : 'text-[#9aa4b2]'}>
+                  {report.previous.change > 0 ? '▲' : report.previous.change < 0 ? '▼' : '='} {Math.abs(report.previous.change)} since your last run
+                </span>
+                <span className="text-[#6b7280]"> · was {report.previous.score}</span>
+              </p>
+            )}
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#242a33]">
               <motion.div
                 className={`h-full rounded-full ${report.score >= 70 ? 'bg-[#50c878]' : report.score >= 40 ? 'bg-amber-300' : 'bg-[#ff4500]'}`}
@@ -249,6 +258,9 @@ export default function Audit({ api }: { api: string }) {
             <div className="rounded-xl border border-[#ff4500]/25 bg-[#ff4500]/5 p-4">
               <p className="text-[11px] uppercase tracking-[0.08em] text-[#ff6a33]">Threads you are missing</p>
               <p className="mt-1 text-sm text-[#e8eaed]">People choosing what to buy, without you in the conversation.</p>
+              {report.previous?.new_threads?.length ? (
+                <p className="mt-1 text-xs text-[#ff6a33]">{report.previous.new_threads.length} of these are new since your last run.</p>
+              ) : null}
               <ul className="mt-3 space-y-2">
                 {report.opportunities.map(thread => (
                   <li key={thread.url}>

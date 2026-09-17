@@ -8,6 +8,7 @@ Anything belonging to a person (topics, saves, citations) lives in `user_nodes` 
 No model calls in this file. Topic extraction lives in topics.py.
 """
 import asyncio
+import logging
 import os
 import re
 from typing import Optional
@@ -17,6 +18,8 @@ import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -543,3 +546,83 @@ async def delete_member(email: str) -> None:
             timeout=15,
         )
         res.raise_for_status()
+
+
+async def save_audit_run(user_id: str, report: dict) -> None:
+    """Keep each run so the next one can be compared with it."""
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
+                f"{SUPABASE_URL}/rest/v1/audit_runs",
+                headers={**_headers(), "Prefer": "return=minimal"},
+                json=[{
+                    "user_id": user_id,
+                    "brand": report.get("brand", ""),
+                    "category": report.get("category", ""),
+                    "competitors": list((report.get("competitors") or {}).keys()),
+                    "score": report.get("score", 0),
+                    "report": report,
+                }],
+                timeout=15,
+            )
+            res.raise_for_status()
+    except Exception:
+        logger.exception("Could not save the audit run")
+
+
+async def read_audit_runs(user_id: str, brand: Optional[str] = None, limit: int = 12) -> list[dict]:
+    params = {"user_id": f"eq.{user_id}", "select": "brand,category,score,report,created_at",
+              "order": "created_at.desc", "limit": str(limit)}
+    if brand:
+        params["brand"] = f"eq.{brand}"
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{SUPABASE_URL}/rest/v1/audit_runs", headers=_headers(), params=params, timeout=15)
+        res.raise_for_status()
+        return res.json()
+
+
+async def read_slack_hook(user_id: str) -> Optional[dict]:
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/slack_hooks",
+            headers=_headers(),
+            params={"user_id": f"eq.{user_id}", "select": "webhook_url,enabled", "limit": 1},
+            timeout=15,
+        )
+        res.raise_for_status()
+        rows = res.json()
+    return rows[0] if rows else None
+
+
+async def save_slack_hook(user_id: str, webhook_url: str) -> None:
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{SUPABASE_URL}/rest/v1/slack_hooks",
+            headers={**_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            params={"on_conflict": "user_id"},
+            json=[{"user_id": user_id, "webhook_url": webhook_url, "enabled": True}],
+            timeout=15,
+        )
+        res.raise_for_status()
+
+
+async def delete_slack_hook(user_id: str) -> None:
+    async with httpx.AsyncClient() as client:
+        res = await client.delete(
+            f"{SUPABASE_URL}/rest/v1/slack_hooks",
+            headers=_headers(),
+            params={"user_id": f"eq.{user_id}"},
+            timeout=15,
+        )
+        res.raise_for_status()
+
+
+async def send_to_slack(webhook_url: str, text: str) -> bool:
+    """Post one message. A failed alert must never break the thing that triggered it."""
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(webhook_url, json={"text": text}, timeout=10)
+            return res.status_code < 300
+    except Exception:
+        logger.exception("Could not post to Slack")
+        return False
