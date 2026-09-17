@@ -495,7 +495,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
 
   return (
     <main className="flex-1 min-w-0 min-h-screen lg:h-screen lg:overflow-hidden flex flex-col bg-[#0a0b0d]">
-      <header className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6 pb-4 flex items-center gap-3 flex-wrap border-b border-[#1d2025]">
+      <header className="w-full max-w-[100rem] mx-auto px-4 sm:px-8 lg:px-12 pt-5 sm:pt-6 pb-4 flex items-center gap-3 flex-wrap border-b border-[#1d2025]">
         <h2 className="text-lg font-semibold tracking-[-0.02em]">Your graph</h2>
         <span className="text-xs text-[#7f858e]">Threads, communities and topics you've searched or saved.</span>
 
@@ -586,7 +586,7 @@ export default function Graph({ signedIn, onSignIn }: GraphProps) {
         ))}
       </div>
 
-      <div className="w-full max-w-6xl mx-auto flex-1 min-h-0 min-w-0 px-4 sm:px-6 lg:px-8 py-4 flex flex-col lg:flex-row gap-4">
+      <div className="w-full max-w-[100rem] mx-auto flex-1 min-h-0 min-w-0 px-4 sm:px-8 lg:px-12 py-4 flex flex-col lg:flex-row gap-4">
         {/* The picture. */}
         <div className="flex-1 min-w-0 rounded-xl border border-[#2a2d33] relative overflow-hidden bg-[radial-gradient(circle_at_50%_45%,rgba(255,106,51,0.06),transparent_38%),linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px),#101114] bg-[size:auto,28px_28px,28px_28px,auto] shadow-[0_20px_50px_rgba(0,0,0,0.2)]">
           {loading && <p className="absolute inset-0 grid place-items-center text-sm text-[#9aa4b2]">Loading your graph…</p>}

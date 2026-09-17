@@ -128,8 +128,9 @@ async def run_audit(
         # Eight earned mentions is a brand people actually bring up. Three is a start.
         # Worth less when they are all old.
         "earned_mentions": round(_score_part(len(earned), 8, WEIGHTS["earned_mentions"]) * freshness),
-        # Being in half the subreddits that discuss your category is a fair bar.
-        "coverage_gap": _score_part(len(present_subs), max(1, len(category_subs) * 0.5), WEIGHTS["coverage_gap"]),
+        # Full marks means being in the communities that discuss your category,
+        # not half of them.
+        "coverage_gap": _score_part(len(present_subs), max(1, len(category_subs)), WEIGHTS["coverage_gap"]),
         "buying_intent": _score_part(len(brand_in_intent), 3, WEIGHTS["buying_intent"]),
         # Full marks only when you appear at least as often as your strongest competitor.
         "competitor_gap": _score_part(len(brand_in_intent), max(1, competitor_best), WEIGHTS["competitor_gap"]) if competitor_measured else 0,

@@ -1302,7 +1302,7 @@ export default function App() {
         </div>
       ) : view === 'ideate' ? (
         <div>
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+          <div className="w-full max-w-[100rem] mx-auto px-4 sm:px-8 lg:px-12 pt-10">
             <div className="border-b border-[#242a33] pb-6">
               <h2 className="text-3xl font-bold tracking-tight">Ideate</h2>
               <p className="text-sm text-[#9aa4b2] mt-2">Start from your own idea, or from a page you want people to talk about.</p>
@@ -1313,7 +1313,7 @@ export default function App() {
             </div>
           </div>
           {ideateTab === 'url' ? <IdeateWireframe /> : (
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="w-full max-w-[100rem] mx-auto px-4 sm:px-8 lg:px-12 py-6">
               <div>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e8eaed]">
@@ -1495,7 +1495,7 @@ export default function App() {
       ) : view === 'graph' ? (
         <Graph signedIn={!!session} onSignIn={() => setShowAuthGate(true)} />
       ) : (
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div className="w-full max-w-[100rem] mx-auto px-4 sm:px-8 lg:px-12 py-10">
         {/* Hero + search bar */}
         {!intel && !loading && searches.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
