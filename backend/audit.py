@@ -126,7 +126,10 @@ async def run_audit(
 
     # Where the category is discussed, versus where this brand shows up at all.
     category_subs = {_subreddit(r) for r in category_threads + intent_threads if _subreddit(r)}
-    present_subs = {_subreddit(r) for r in mentions if _subreddit(r)}
+    # Only counts as "coverage" when it's one of the communities actually
+    # discussing the category — a brand mention search can surface a subreddit
+    # that never showed up in the category/intent search, which isn't coverage.
+    present_subs = {_subreddit(r) for r in mentions if _subreddit(r)} & category_subs
     missing_subs = sorted(category_subs - present_subs)
 
     # Threads where someone is choosing what to buy.
