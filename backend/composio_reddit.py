@@ -180,7 +180,10 @@ async def get_post_json(connected_account_id: str, permalink: str):
                 timeout=45,
             )
             res.raise_for_status()
-            data = res.json().get("data") or {}
+            data = res.json().get("data")
+            if isinstance(data, list):
+                return data
+            data = data or {}
             return data.get("response_data") or data
     except Exception:
         logger.exception("Could not read Reddit thread through the connection")
