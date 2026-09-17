@@ -1298,28 +1298,6 @@ export default function App() {
               </button>
             ))}
           </nav>
-          {communities && communities.list.length > 0 && (
-            <div className="hidden md:block mx-3 mb-3 rounded-xl border border-[#242a33] bg-[#121417] p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#858b95]">Be active in</p>
-              <p className="mt-0.5 truncate text-[11px] text-[#6b7280]" title={communities.topic}>for “{communities.topic}”</p>
-              <ul className="mt-2 space-y-1">
-                {communities.list.slice(0, 5).map(c => (
-                  <li key={c.name}>
-                    <a
-                      href={`https://reddit.com/${c.name}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={c.example}
-                      className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs text-[#d7dbe1] transition-colors hover:bg-[#1a1d23] hover:text-[#ff6a33]"
-                    >
-                      <span className="truncate">{c.name}</span>
-                      <span className="shrink-0 text-[10px] text-[#6b7280]">{c.threads} {c.threads === 1 ? 'thread' : 'threads'}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
           {session && (
             <div className="px-2 pb-2 md:px-3 md:pb-3">
               <button
@@ -1590,6 +1568,29 @@ export default function App() {
           </button>
         </div>}
 
+        {view === 'results' && communities && communities.list.length > 0 && (
+          <div className="mt-5 rounded-xl border border-[#242a33] bg-[#14171c] p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold text-[#e8eaed]">Be active in these communities</p>
+              <p className="text-xs text-[#6b7280]">for “{communities.topic}”</p>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {communities.list.slice(0, 5).map(c => (
+                <a
+                  key={c.name}
+                  href={`https://reddit.com/${c.name}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group rounded-lg border border-[#242a33] bg-[#0d0f13] p-3 transition-colors hover:border-[#ff4500]/50"
+                >
+                  <p className="truncate text-sm font-medium text-[#e8eaed] group-hover:text-[#ff6a33]">{c.name} ↗</p>
+                  <p className="mt-1 text-[11px] text-[#9aa4b2]">{c.threads} {c.threads === 1 ? 'thread' : 'threads'} on this topic</p>
+                  {c.example && <p className="mt-1.5 line-clamp-2 text-[11px] text-[#6b7280]">{c.example}</p>}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
         {view === 'results' && error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 
         {/* Loading skeleton */}
