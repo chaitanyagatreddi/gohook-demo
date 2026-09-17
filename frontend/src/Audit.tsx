@@ -261,7 +261,7 @@ export default function Audit({ api }: { api: string }) {
               <p className="mt-1 text-sm text-[#e8eaed]">People choosing what to buy, without you in the conversation.</p>
               {report.missing_opportunity?.counted ? (
                 <p className="mt-1 text-xs text-[#ff6a33]">
-                  {report.missing_opportunity.threads} threads, {report.missing_opportunity.comments.toLocaleString()} comments, none of them yours.
+                  {report.missing_opportunity.threads} threads, {report.missing_opportunity.comments.toLocaleString()} comments, {report.missing_opportunity.upvotes.toLocaleString()} upvotes, none of them yours.
                 </p>
               ) : null}
               {report.previous?.new_threads?.length ? (
