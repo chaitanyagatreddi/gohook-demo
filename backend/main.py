@@ -361,7 +361,7 @@ async def audit(req: AuditRequest, identity: Optional[dict] = Depends(get_curren
     username = str(saved.get("reddit_username") or "")
 
     try:
-        report = await run_audit(req.brand, req.category, req.competitors, profile, {username})
+        report = await run_audit(req.brand, req.category, req.competitors, profile, {username}, saved.get("connected_account_id"))
     except Exception as exc:
         logger.exception("Audit failed")
         await record_event(identity["id"], "audit", False, {"why": _http_detail(exc)})

@@ -13,6 +13,7 @@ type Report = {
   earned: Thread[]
   self_posted: number
   opportunities: Thread[]
+  missing_opportunity: { threads: number; comments: number; upvotes: number; counted: boolean }
   competitors: Record<string, number>
   previous?: { score: number; change: number; when: string; new_threads: Thread[] }
 }
@@ -258,6 +259,11 @@ export default function Audit({ api }: { api: string }) {
             <div className="rounded-xl border border-[#ff4500]/25 bg-[#ff4500]/5 p-4">
               <p className="text-[11px] uppercase tracking-[0.08em] text-[#ff6a33]">Threads you are missing</p>
               <p className="mt-1 text-sm text-[#e8eaed]">People choosing what to buy, without you in the conversation.</p>
+              {report.missing_opportunity?.counted ? (
+                <p className="mt-1 text-xs text-[#ff6a33]">
+                  {report.missing_opportunity.threads} threads, {report.missing_opportunity.comments.toLocaleString()} comments, none of them yours.
+                </p>
+              ) : null}
               {report.previous?.new_threads?.length ? (
                 <p className="mt-1 text-xs text-[#ff6a33]">{report.previous.new_threads.length} of these are new since your last run.</p>
               ) : null}

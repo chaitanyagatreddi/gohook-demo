@@ -8,9 +8,11 @@ asking what to buy. GummySearch shut down a year ago and still owns its
 "alternative to" threads. So the score counts who wrote the mention and where
 it sits, not how many there are.
 """
+import asyncio
 import re
 from typing import Optional
 
+import composio_reddit
 from crawler import search_web, verified_reddit_threads
 
 # What a reply can still be worth, by how the thread reads.
@@ -72,12 +74,39 @@ def _score_part(actual: float, target: float, points: int) -> int:
     return int(round(min(1.0, actual / target) * points))
 
 
+async def _missing_opportunity(connected_account_id: Optional[str], threads: list[dict]) -> dict:
+    """Total comments and upvotes sitting on threads the brand never answered."""
+    if not connected_account_id or not threads:
+        return {"threads": len(threads), "comments": 0, "upvotes": 0, "counted": False}
+
+    raws = await asyncio.gather(
+        *(composio_reddit.get_post_json(connected_account_id, r.get("permalink", "")) for r in threads),
+        return_exceptions=True,
+    )
+
+    comments = upvotes = 0
+    for raw in raws:
+        # Reddit's own .json shape: [post_listing, comments_listing].
+        listing = raw[0] if isinstance(raw, list) and raw else raw
+        if not isinstance(listing, dict):
+            continue
+        children = (listing.get("data") or {}).get("children") or []
+        post = children[0].get("data") if children and isinstance(children[0], dict) else None
+        if not post:
+            continue
+        comments += int(post.get("num_comments") or 0)
+        upvotes += int(post.get("score") or post.get("ups") or 0)
+
+    return {"threads": len(threads), "comments": comments, "upvotes": upvotes, "counted": True}
+
+
 async def run_audit(
     brand: str,
     category: str,
     competitors: list[str],
     profile: Optional[dict] = None,
     known_usernames: Optional[set[str]] = None,
+    connected_account_id: Optional[str] = None,
 ) -> dict:
     """Score how present a brand is on Reddit, and say what is missing."""
     brand = brand.strip()
@@ -142,6 +171,9 @@ async def run_audit(
     out_of = sum(WEIGHTS.values()) - (0 if competitor_measured else WEIGHTS["competitor_gap"])
     score = round(sum(parts.values()) / out_of * 100)
 
+    opportunities_raw = [r for r in intent if r not in brand_in_intent][:8]
+    missing_opportunity = await _missing_opportunity(connected_account_id, opportunities_raw)
+
     return {
         "brand": brand,
         "category": category,
@@ -170,7 +202,8 @@ async def run_audit(
         "opportunities": [
             {"title": r.get("title", ""), "url": r.get("url", ""), "subreddit": _subreddit(r),
              "competitors_here": [name for name, hits in competitor_hits.items() if r in hits]}
-            for r in intent if r not in brand_in_intent
-        ][:8],
+            for r in opportunities_raw
+        ],
+        "missing_opportunity": missing_opportunity,
         "competitors": {name: len(hits) for name, hits in competitor_hits.items()},
     }
