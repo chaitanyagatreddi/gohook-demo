@@ -8,7 +8,6 @@ body { margin: 0; }
 .iw-eyebrow { color: #ff6a33; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
 .iw-header h1 { font-size: clamp(32px, 4vw, 52px); line-height: 1.04; max-width: 770px; margin: 12px 0; letter-spacing: -.04em; }
 .iw-header p, .iw-evidence > p { color: #939ba8; line-height: 1.55; margin: 0; max-width: 720px; }
-.iw-badge, .iw-count { border: 1px solid #343a44; color: #959da9; padding: 7px 10px; border-radius: 999px; font-size: 11px; white-space: nowrap; }
 .iw-source-card { border: 1px solid #2a3038; background: #12151a; border-radius: 16px; padding: 22px; margin-top: 28px; }
 .iw-source-card label { display: block; color: #d9dde3; font-size: 12px; font-weight: 650; margin: 0 0 8px; }
 .iw-source-card label:not(:first-child) { margin-top: 18px; }
@@ -56,7 +55,6 @@ body { margin: 0; }
 @media (max-width: 860px) {
   .iw-main { padding: 30px 18px 60px; }
   .iw-header h1 { font-size: 34px; }
-  .iw-badge { display: none; }
   .iw-url-row { grid-template-columns: 1fr; }
   .iw-url-row button { min-height: 44px; }
   .iw-workspace { grid-template-columns: 1fr; }
