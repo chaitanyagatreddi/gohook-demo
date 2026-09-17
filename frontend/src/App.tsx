@@ -1530,7 +1530,7 @@ export default function App() {
         {/* Hero + search bar */}
         {!intel && !loading && searches.length === 0 && view === 'results' && (
           <div className="text-center mb-6">
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
+            <h2 className="text-3xl sm:text-4xl font-semibold tracking-[-0.03em] leading-tight">
               Your knowledge graph<br />
               <span className="bg-gradient-to-r from-[#ff4500] to-[#ff6a33] bg-clip-text text-transparent">
                 for Reddit.
