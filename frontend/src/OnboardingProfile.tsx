@@ -1,12 +1,16 @@
 import { useState } from 'react'
-import { supabase } from './supabaseClient'
+import { supabase, authHeaders } from './supabaseClient'
+import VoiceSetup from './VoiceSetup'
 
 type Props = {
   onDone: () => void
 }
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 /** Shown once, right after first sign-in, before the app is usable. */
 const OnboardingProfile = ({ onDone }: Props) => {
+  const [step, setStep] = useState<'profile' | 'voice'>('profile')
   const [name, setName] = useState('')
   const [company, setCompany] = useState('')
   const [linkedin, setLinkedin] = useState('')
@@ -38,7 +42,28 @@ const OnboardingProfile = ({ onDone }: Props) => {
       setError('Could not save your profile. Please try again.')
       return
     }
-    onDone()
+    setStep('voice')
+  }
+
+  if (step === 'voice') {
+    return (
+      <div className="w-full max-w-md mx-auto py-10">
+        <div className="rounded-2xl border border-[#242a33] bg-[#14171c] p-7 sm:p-8 shadow-[0_24px_80px_rgba(0,0,0,0.3)]">
+          <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#e8eaed]">One last thing &mdash; how do you write?</h2>
+          <p className="mt-2 text-sm leading-relaxed text-[#9aa4b2]">
+            Paste a few lines of your own writing so GoHook can match your tone in drafts. Optional, but it makes replies sound like you from the start.
+          </p>
+
+          <div className="mt-6">
+            <VoiceSetup api={API} authHeaders={authHeaders} signedIn={true} onSaved={() => onDone()} />
+          </div>
+
+          <button type="button" onClick={onDone} className="mt-5 text-sm text-[#9aa4b2] hover:text-[#e8eaed]">
+            Skip for now &rarr;
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

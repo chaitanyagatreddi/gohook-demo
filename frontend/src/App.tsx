@@ -1374,17 +1374,15 @@ export default function App() {
                     )}
                   </h3>
                   <div className="flex items-center gap-2">
-                    {voiceReady && (
-                      <label className="flex items-center gap-1.5 text-xs text-[#9aa4b2] cursor-pointer select-none">
-                        <input type="checkbox" checked={useVoice} onChange={e => setUseVoice(e.target.checked)} className="accent-[#ff4500]" />
-                        Use my voice
-                      </label>
-                    )}
                     <select
-                      value={draftPlatform}
-                      onChange={e => setDraftPlatform(e.target.value as 'reddit' | 'hn' | 'pg')}
+                      value={voiceReady && useVoice ? 'my_voice' : draftPlatform}
+                      onChange={e => {
+                        const v = e.target.value
+                        if (v === 'my_voice') { setUseVoice(true) } else { setUseVoice(false); setDraftPlatform(v as 'reddit' | 'hn' | 'pg') }
+                      }}
                       className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
                     >
+                      {voiceReady && <option value="my_voice">🎙️ My voice</option>}
                       <option value="reddit">🟠 Reddit</option>
                       <option value="hn">🔶 Hacker News tone</option>
                       <option value="pg">✍️ Paul Graham tone</option>
@@ -2254,17 +2252,15 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e8eaed]">💬 Reply to a post</h3>
                   <div className="flex items-center gap-2">
-                    {voiceReady && (
-                      <label className="flex items-center gap-1.5 text-xs text-[#9aa4b2] cursor-pointer select-none">
-                        <input type="checkbox" checked={useVoice} onChange={e => setUseVoice(e.target.checked)} className="accent-[#ff4500]" />
-                        Use my voice
-                      </label>
-                    )}
                     <select
-                      value={commentPlatform}
-                      onChange={e => setCommentPlatform(e.target.value as 'reddit' | 'hn')}
+                      value={voiceReady && useVoice ? 'my_voice' : commentPlatform}
+                      onChange={e => {
+                        const v = e.target.value
+                        if (v === 'my_voice') { setUseVoice(true) } else { setUseVoice(false); setCommentPlatform(v as 'reddit' | 'hn') }
+                      }}
                       className="bg-[#14171c] border border-[#242a33] rounded-lg px-3 py-1.5 text-xs font-medium text-[#e8eaed] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/60"
                     >
+                      {voiceReady && <option value="my_voice">🎙️ My voice</option>}
                       <option value="reddit">🟠 Reddit</option>
                       <option value="hn">🔶 Hacker News tone</option>
                     </select>
