@@ -169,6 +169,35 @@ async def ingest_threads(threads: list[dict]) -> dict[str, str]:
     return {tid: ids[("thread", tid)] for tid, _ in parsed if ("thread", tid) in ids}
 
 
+async def link_user_to_subreddits(user_id: str, subreddit_names: list[str]) -> None:
+    """
+    Record which subreddits this person is subscribed to, as 'subscribed'
+    edges from their self node to subreddit nodes. Safe to call twice.
+    """
+    if not user_id or not subreddit_names:
+        return
+
+    subreddit_rows = [
+        {"type": "subreddit", "source_id": name, "title": f"r/{name}"}
+        for name in sorted(set(subreddit_names))
+    ]
+
+    async with httpx.AsyncClient() as client:
+        ids = await _upsert_nodes(client, subreddit_rows)
+
+    node_ids = [ids[("subreddit", name)] for name in subreddit_names if ("subreddit", name) in ids]
+    await link_user_to_threads(user_id, node_ids, "subscribed")
+
+
+async def snapshot_scores(user_id: Optional[str], items: list[dict], node_ids: dict[str, str]) -> None:
+    """Record a score snapshot for each item that has a matching node id."""
+    for item in items:
+        thread_id = thread_id_from_permalink(item.get("permalink") or item.get("url") or "")
+        node_id = node_ids.get(thread_id) if thread_id else None
+        if node_id:
+            await record_thread_score(user_id, node_id, item.get("score", 0))
+
+
 async def _self_node_id(client: httpx.AsyncClient, user_id: str) -> str:
     """
     The single node standing for the user themselves. Every 'saved' / 'cited' /
@@ -188,10 +217,11 @@ async def _self_node_id(client: httpx.AsyncClient, user_id: str) -> str:
 
 async def link_user_to_threads(user_id: str, node_ids: list[str], edge_type: str) -> None:
     """
-    Record something the user did with these threads — 'saved', 'cited', 'authored' or 'commented'.
+    Record something the user did with these threads — 'saved', 'cited', 'authored',
+    'commented', or (for subreddit nodes) 'subscribed'.
     Safe to call twice; duplicates are ignored.
     """
-    if not user_id or not node_ids or edge_type not in ("saved", "cited", "authored", "commented"):
+    if not user_id or not node_ids or edge_type not in ("saved", "cited", "authored", "commented", "subscribed"):
         return
 
     async with httpx.AsyncClient() as client:
@@ -474,6 +504,32 @@ async def record_event(user_id: Optional[str], event: str, ok: bool = True, meta
             )
     except Exception:
         pass
+
+
+async def record_thread_score(user_id: Optional[str], node_id: str, score: int) -> None:
+    """One point in a thread's score history. Reuses the events table."""
+    await record_event(user_id, "thread_score", meta={"node_id": node_id, "score": score})
+
+
+async def read_thread_score_history(node_id: str, limit: int = 20) -> list[dict]:
+    """A thread's score over time, oldest first."""
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/events",
+            headers=_headers(),
+            params={
+                "event": "eq.thread_score",
+                "meta->>node_id": f"eq.{node_id}",
+                "select": "meta,created_at",
+                "order": "created_at.desc",
+                "limit": str(limit),
+            },
+            timeout=15,
+        )
+        res.raise_for_status()
+        rows = res.json()
+    rows.reverse()
+    return [{"score": r["meta"].get("score"), "at": r["created_at"]} for r in rows]
 
 
 async def read_usage(days: int = 30) -> dict:

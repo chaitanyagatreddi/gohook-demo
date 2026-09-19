@@ -248,6 +248,45 @@ async def get_own_comments(connected_account_id: str, username: str, limit: int 
     return comments
 
 
+async def get_subscribed_subreddits(connected_account_id: str, limit: int = 100) -> list[str]:
+    """
+    The subreddits this person is subscribed to, read straight from Reddit's
+    own listing via the same proxy used elsewhere in this file.
+
+    Returns plain subreddit names (no "r/" prefix), lowercased.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
+                f"{API}/tools/execute/proxy",
+                headers=_headers(),
+                json={
+                    "endpoint": f"/subreddits/mine/subscriber.json?limit={limit}&raw_json=1",
+                    "method": "GET",
+                    "connected_account_id": connected_account_id,
+                },
+                timeout=45,
+            )
+            res.raise_for_status()
+            data = res.json().get("data")
+    except Exception:
+        logger.exception("Could not read this person's subscribed subreddits")
+        return []
+
+    listing = data[0] if isinstance(data, list) and data else data
+    if not isinstance(listing, dict):
+        return []
+    children = (listing.get("data") or {}).get("children") or []
+
+    names = []
+    for entry in children[:limit]:
+        item = entry.get("data") if isinstance(entry, dict) else None
+        name = item.get("display_name") if isinstance(item, dict) else None
+        if name:
+            names.append(name.lower())
+    return names
+
+
 async def get_own_posts(user_id: str, username: str, limit: int = MAX_OWN_POSTS) -> list[dict]:
     """
     The person's own posts.

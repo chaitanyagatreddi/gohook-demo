@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, verified_reddit_threads
 from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
-from graph import ingest_threads, link_user_to_threads, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
+from graph import ingest_threads, link_user_to_threads, link_user_to_subreddits, snapshot_scores, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, record_thread_score, read_thread_score_history, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -652,6 +652,7 @@ async def reddit_sync(user_id: Optional[str] = Depends(require_user)):
     try:
         posts = await composio_reddit.get_own_posts(user_id, username)
         comments = await composio_reddit.get_own_comments(saved["connected_account_id"], username)
+        subreddits = await composio_reddit.get_subscribed_subreddits(saved["connected_account_id"])
 
         added = 0
         if posts:
@@ -659,13 +660,17 @@ async def reddit_sync(user_id: Optional[str] = Depends(require_user)):
             if post_node_ids:
                 await link_user_to_threads(user_id, list(post_node_ids.values()), "authored")
                 await tag_threads(user_id, posts, post_node_ids)
+                await snapshot_scores(user_id, posts, post_node_ids)
                 added += len(post_node_ids)
         if comments:
             comment_node_ids = await ingest_threads(comments)
             if comment_node_ids:
                 await link_user_to_threads(user_id, list(comment_node_ids.values()), "commented")
                 await tag_threads(user_id, comments, comment_node_ids)
+                await snapshot_scores(user_id, comments, comment_node_ids)
                 added += len(comment_node_ids)
+        if subreddits:
+            await link_user_to_subreddits(user_id, subreddits)
 
         await composio_reddit.mark_synced(user_id)
         return {"added": added, "username": username}
@@ -706,6 +711,16 @@ async def graph(user_id: Optional[str] = Depends(get_current_user)):
     except Exception:
         logger.exception("Graph read failed")
         raise HTTPException(status_code=500, detail="Could not load your graph. Please try again.")
+
+
+@app.get("/graph/thread/{node_id}/score-history")
+async def thread_score_history(node_id: str, user_id: Optional[str] = Depends(require_user)):
+    """A thread's score over time, oldest first. For the Graph side pane."""
+    try:
+        return {"history": await read_thread_score_history(node_id)}
+    except Exception:
+        logger.exception("Score history read failed")
+        raise HTTPException(status_code=500, detail="Could not load score history.")
 
 
 @app.post("/search")
