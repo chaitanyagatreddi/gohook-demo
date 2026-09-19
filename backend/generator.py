@@ -108,6 +108,65 @@ Rules:
 - Keep the result to one natural question."""
 
 
+def _capitalize_first(text: str) -> str:
+    """
+    Capitalize only the first letter. Everything else — lowercase mid-sentence,
+    slang, casual style — is left exactly as the model wrote it. The prompts
+    above deliberately allow lowercase ("lowercase ok") to sound human; this
+    only fixes the one spot that reads as sloppy rather than casual.
+    """
+    for i, ch in enumerate(text):
+        if ch.isalpha():
+            return text[:i] + ch.upper() + text[i + 1:]
+    return text
+
+
+TYPO_FIX_SYSTEM_PROMPT = """You are a typo-only proofreader.
+
+Fix ONLY spelling mistakes and typos (e.g. "teh" -> "the", "recieve" -> "receive", "wierd" -> "weird").
+
+Do NOT change, under any circumstance:
+- grammar or sentence structure
+- punctuation
+- capitalization (except inside a word you are correcting)
+- tone, wording, slang, contractions, or casualness
+- paragraph breaks or line breaks
+- length
+
+If there are no typos, return the text completely unchanged, character for character.
+
+Output ONLY the corrected text. No preamble, no explanation, no markdown, no quotes around it."""
+
+
+def _fix_typos(text: str) -> str:
+    """
+    Correct spelling typos only, via a tightly-scoped model call at temperature 0.
+    Never touches grammar, tone, or style — a failed or misbehaving pass falls
+    back to the original text rather than risk corrupting the draft.
+    """
+    if not text.strip():
+        return text
+    try:
+        resp = get_client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": TYPO_FIX_SYSTEM_PROMPT},
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=max(60, len(text.split()) * 2),
+        )
+        fixed = (resp.choices[0].message.content or "").strip()
+        return fixed or text
+    except Exception:
+        return text
+
+
+def _finalize_draft(text: str) -> str:
+    """Shared cleanup applied to every generated draft, in this order: fix typos, then capitalize the first letter."""
+    return _capitalize_first(_fix_typos(text))
+
+
 def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: str = "reddit", voice: Optional[dict] = None) -> dict:
     """
     idea: 2-line user input (what they want to say)
@@ -134,7 +193,7 @@ def draft_post(idea: str, context_snippets: Optional[List[str]] = None, style: s
         temperature=0.8,
         max_tokens=400,
     )
-    draft = resp.choices[0].message.content.strip()
+    draft = _finalize_draft(resp.choices[0].message.content.strip())
     word_count = len(draft.split())
     tone = detect_tone(draft)
     return {"draft": draft, "word_count": word_count, "tone": tone, "voiced": bool(voice)}
@@ -160,7 +219,7 @@ def draft_comment(post: str, intent: str, voice: Optional[dict] = None) -> dict:
         temperature=0.8,
         max_tokens=300,
     )
-    draft = resp.choices[0].message.content.strip()
+    draft = _finalize_draft(resp.choices[0].message.content.strip())
     return {
         "voiced": bool(voice),
         "draft": draft,
@@ -631,7 +690,7 @@ def draft_post_from_angle(page_text: str, angle: dict, takeaway: str, example_th
         max_tokens=700,
     )
     data = json.loads(resp.choices[0].message.content or "{}")
-    draft = (data.get("draft") or "").strip()
+    draft = _finalize_draft((data.get("draft") or "").strip())
     if not draft:
         raise ValueError("Empty draft")
     return {

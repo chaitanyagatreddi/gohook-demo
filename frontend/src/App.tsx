@@ -1444,11 +1444,12 @@ export default function App() {
 
                 {draft && (
                   <div className="mt-4 border border-[#242a33] rounded-xl p-4 bg-[#14171c]">
+                    <p className="mb-1 text-[10px] text-[#6b7280]">✎ Editable — click to change anything</p>
                     <textarea
                       value={draft.draft}
                       onChange={e => setDraft({ ...draft, draft: e.target.value, word_count: e.target.value.trim().split(/\s+/).filter(Boolean).length })}
                       rows={Math.max(4, draft.draft.split('\n').length + 1)}
-                      className="w-full bg-transparent resize-y whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#ff4500]/40 rounded-lg -m-1 p-1"
+                      className="w-full bg-transparent resize-y whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed border border-transparent hover:border-[#3a4250] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/40 rounded-lg -m-1 p-1 transition-colors"
                     />
                     <div className="mt-3 pt-3 border-t border-[#242a33] flex items-center gap-3 text-xs text-[#9aa4b2]">
                       <span>{draft.word_count} words</span>
@@ -2360,11 +2361,12 @@ export default function App() {
 
                 {comment && (
                   <div className="mt-4 border border-[#242a33] rounded-xl p-4 bg-[#14171c]">
+                    <p className="mb-1 text-[10px] text-[#6b7280]">✎ Editable — click to change anything</p>
                     <textarea
                       value={comment.draft}
                       onChange={e => setComment({ ...comment, draft: e.target.value, word_count: e.target.value.trim().split(/\s+/).filter(Boolean).length })}
                       rows={Math.max(4, comment.draft.split('\n').length + 1)}
-                      className="w-full bg-transparent resize-y whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#ff4500]/40 rounded-lg -m-1 p-1"
+                      className="w-full bg-transparent resize-y whitespace-pre-wrap text-sm text-[#e8eaed] leading-relaxed border border-transparent hover:border-[#3a4250] focus:outline-none focus:ring-2 focus:ring-[#ff4500]/40 rounded-lg -m-1 p-1 transition-colors"
                     />
                     <div className="mt-3 pt-3 border-t border-[#242a33] flex items-center gap-3 text-xs text-[#9aa4b2]">
                       <span>{comment.word_count} words</span>
