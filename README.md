@@ -15,7 +15,7 @@ Live at [gohooklive.vercel.app](https://gohooklive.vercel.app).
 | **Ideate** | Two ways to start a post: from your own idea, or from a URL. Paste a link and it finds the subreddits already discussing it, then gives you angles that start a discussion instead of reading like an ad. |
 | **Reply to Threads** | Paste a thread, say what you want to add, get a reply that fits the conversation. One click saves it to the Board. |
 | **Research** | Ask a question, get an answer built only from Reddit threads, with every claim tied to a source. When the evidence is thin it says so and holds the answer back rather than guessing. |
-| **Graph** | Your threads, subreddits and topics, and how they connect. |
+| **Graph** | Your threads, subreddits and topics, and how they connect. Tracks subscribed subreddits and a thread's score over time. |
 | **Your voice** | Paste a few lines you wrote, or use your own Reddit posts, and drafts come back sounding like you. Only the style is stored, never the text. |
 
 ## How the answer checking works
@@ -87,9 +87,16 @@ Two Vercel projects, both from this repo:
 - **Frontend** (`gohooklive`, root `frontend`): `main` is production, `staging` is the staging site.
 - **Backend** (`backend`, root `backend`): not connected to git. Deploy by hand with `vercel --prod` from `backend/`.
 
+## Recent changes
+
+- Reddit Presence Score: fixed weights to match spec (buying-intent 20, not 30) and made Recency its own scored part instead of a hidden discount on Earned Mentions.
+- Every generated draft (post, comment, angle) now runs through a typo-only fix and has its first letter capitalized before being returned.
+- `/reddit/sync` now also records subscribed subreddits (as `subscribed` edges) and a score snapshot for each of the user's own posts/comments, both feeding the Graph. Viewing this in the UI, and detecting *newly* joined subreddits specifically, is not built yet.
+- Onboarding role dropdown now includes CEO and CTO.
+
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md).
+See [ARCHITECTURE.md](./ARCHITECTURE.md). Note: this predates the graph, audit, and Composio integration — it describes an earlier version of the app.
 
 ## License
 
