@@ -118,6 +118,8 @@ const OnboardingProfile = ({ onDone }: Props) => {
                 className="rounded-lg border border-[#242a33] bg-[#0b0d10] px-3.5 py-3 text-sm text-[#e8eaed] focus:outline-none focus:border-[#ff6a33]"
               >
                 <option value="">Select&hellip;</option>
+                <option value="ceo">CEO</option>
+                <option value="cto">CTO</option>
                 <option value="founder">Founder</option>
                 <option value="marketer">Marketer</option>
                 <option value="agency">Agency / fractional</option>
