@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, verified_reddit_threads
 from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
-from graph import ingest_threads, link_user_to_threads, link_user_to_subreddits, snapshot_scores, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, record_thread_score, read_thread_score_history, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
+from graph import ingest_threads, link_user_to_threads, link_user_to_subreddits, read_subscribed_subreddits, snapshot_scores, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, record_thread_score, read_thread_score_history, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -721,6 +721,16 @@ async def thread_score_history(node_id: str, user_id: Optional[str] = Depends(re
     except Exception:
         logger.exception("Score history read failed")
         raise HTTPException(status_code=500, detail="Could not load score history.")
+
+
+@app.get("/graph/subreddits")
+async def subscribed_subreddits(user_id: Optional[str] = Depends(require_user)):
+    """Subscribed subreddits with first-seen dates. For the Graph side pane."""
+    try:
+        return {"subreddits": await read_subscribed_subreddits(user_id)}
+    except Exception:
+        logger.exception("Subscribed subreddits read failed")
+        raise HTTPException(status_code=500, detail="Could not load your subreddits.")
 
 
 @app.post("/search")

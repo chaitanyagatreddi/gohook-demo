@@ -511,6 +511,54 @@ async def record_thread_score(user_id: Optional[str], node_id: str, score: int) 
     await record_event(user_id, "thread_score", meta={"node_id": node_id, "score": score})
 
 
+async def read_subscribed_subreddits(user_id: str) -> list[dict]:
+    """
+    Subreddits this person is subscribed to, each with the date GoHook first
+    saw the subscription. Repeat syncs don't touch that date (the insert uses
+    ignore-duplicates), so it's a real "joined on" — or at least "first seen on".
+    """
+    async with httpx.AsyncClient() as client:
+        self_res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/user_nodes",
+            headers=_headers(),
+            params={"user_id": f"eq.{user_id}", "type": "eq.self", "select": "id", "limit": 1},
+        )
+        self_res.raise_for_status()
+        self_rows = self_res.json()
+        if not self_rows:
+            return []
+
+        edges_res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/user_edges",
+            headers=_headers(),
+            params={
+                "user_id": f"eq.{user_id}",
+                "from_id": f"eq.{self_rows[0]['id']}",
+                "type": "eq.subscribed",
+                "select": "to_id,created_at",
+                "order": "created_at.desc",
+            },
+        )
+        edges_res.raise_for_status()
+        edges = edges_res.json()
+        if not edges:
+            return []
+
+        node_ids = ",".join(e["to_id"] for e in edges)
+        nodes_res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/nodes",
+            headers=_headers(),
+            params={"id": f"in.({node_ids})", "select": "id,source_id,title"},
+        )
+        nodes_res.raise_for_status()
+        nodes_by_id = {n["id"]: n for n in nodes_res.json()}
+
+    return [
+        {"subreddit": nodes_by_id[e["to_id"]]["source_id"], "title": nodes_by_id[e["to_id"]]["title"], "first_seen": e["created_at"]}
+        for e in edges if e["to_id"] in nodes_by_id
+    ]
+
+
 async def read_thread_score_history(node_id: str, limit: int = 20) -> list[dict]:
     """A thread's score over time, oldest first."""
     async with httpx.AsyncClient() as client:
