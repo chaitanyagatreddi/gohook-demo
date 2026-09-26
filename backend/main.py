@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from crawler import crawl_reddit, search_many, search_web, verified_reddit_threads
 from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
-from graph import ingest_threads, link_user_to_threads, link_user_to_subreddits, read_subscribed_subreddits, snapshot_scores, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, record_thread_score, read_thread_score_history, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
+from graph import ingest_threads, link_user_to_threads, link_user_to_subreddits, read_subscribed_subreddits, snapshot_scores, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, count_events, record_thread_score, read_thread_score_history, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
 from search_console import parse_gsc
 import gsc_patterns, gsc_store
 from topics import tag_threads
@@ -43,6 +43,9 @@ SCOTT_ADMIN_EMAILS = {
     email.strip().lower()
     for email in os.getenv("SCOTT_ADMIN_EMAILS", "").split(",")
     if email.strip()
+}
+QUESTION_SEARCH_LIMITS = {
+    "aankit@trysomething.sh": 25,
 }
 
 async def get_current_identity(authorization: Optional[str] = Header(None)):
@@ -838,6 +841,40 @@ class QuestionMemoryRequest(BaseModel):
     question: str
 
 
+async def question_search_access(identity: Optional[dict]) -> dict:
+    """Return an account's explicit question-search allowance, when it has one."""
+    email = str((identity or {}).get("email", "")).strip().lower()
+    limit = QUESTION_SEARCH_LIMITS.get(email)
+    if not limit:
+        return {"limited": False}
+    used = await count_events(str(identity["id"]), "question")
+    return {"limited": True, "limit": limit, "used": used, "paused": used >= limit}
+
+
+async def enforce_question_search_limit(identity: Optional[dict]) -> None:
+    access = await question_search_access(identity)
+    if access.get("paused"):
+        raise HTTPException(
+            status_code=429,
+            detail=f"You’ve explored your {access['limit']} searches. Your access is paused here so we can keep GoHook useful for everyone.",
+        )
+
+
+@app.get("/question-access")
+async def get_question_search_access(identity: Optional[dict] = Depends(get_current_identity)):
+    if not identity:
+        return {"limited": False}
+    return await question_search_access(identity)
+
+
+@app.post("/question-access/request")
+async def request_more_question_searches(identity: Optional[dict] = Depends(get_current_identity)):
+    if not identity:
+        raise HTTPException(status_code=401, detail="Sign in to request more searches.")
+    await record_event(identity["id"], "question_limit_request", True)
+    return {"requested": True}
+
+
 @app.get("/question-history")
 async def question_history(identity: Optional[dict] = Depends(get_current_identity)):
     if not identity:
@@ -968,6 +1005,8 @@ async def question_answer_stream(
     """Run a question while reporting each real research and correction stage."""
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    await enforce_question_search_limit(identity)
 
     scott_visible = await has_scott_access(identity)
 

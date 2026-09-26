@@ -506,6 +506,26 @@ async def record_event(user_id: Optional[str], event: str, ok: bool = True, meta
         pass
 
 
+async def count_events(user_id: str, event: str) -> int:
+    """Return the lifetime number of successful events of one type for one account."""
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/events",
+            headers={**_headers(), "Prefer": "count=exact"},
+            params={
+                "user_id": f"eq.{user_id}",
+                "event": f"eq.{event}",
+                "ok": "eq.true",
+                "select": "id",
+                "limit": "1",
+            },
+            timeout=15,
+        )
+        res.raise_for_status()
+    total = res.headers.get("content-range", "").rsplit("/", 1)[-1]
+    return int(total) if total.isdigit() else 0
+
+
 async def record_thread_score(user_id: Optional[str], node_id: str, score: int) -> None:
     """One point in a thread's score history. Reuses the events table."""
     await record_event(user_id, "thread_score", meta={"node_id": node_id, "score": score})

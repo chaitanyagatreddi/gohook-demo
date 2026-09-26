@@ -211,6 +211,8 @@ export default function App() {
   }, [searches])
   const turns = searches[0] ?? []
   const [followUp, setFollowUp] = useState('')
+  const [questionLimitReached, setQuestionLimitReached] = useState(false)
+  const [questionLimitRequested, setQuestionLimitRequested] = useState(false)
 
   function addQuestionToBoard(turn: AskTurn) {
     void track('board_add', true, { from: 'question' })
@@ -416,6 +418,7 @@ export default function App() {
       })
       if (!res.ok) {
         const err = await res.json()
+        if (res.status === 429) setQuestionLimitReached(true)
         throw new Error(err.detail || 'Answer generation failed')
       }
       if (!res.body) throw new Error('Live question progress is unavailable')
@@ -473,6 +476,13 @@ export default function App() {
       setAnsweringIndex(null)
       setQuestionProgress(prev => prev ? { ...prev, running: false } : prev)
     }
+  }
+
+  async function requestMoreQuestionSearches() {
+    try {
+      const response = await fetch(`${API}/question-access/request`, { method: 'POST', headers: await authHeaders() })
+      if (response.ok) setQuestionLimitRequested(true)
+    } catch { /* the paused state remains visible if the request cannot be sent */ }
   }
 
   async function runNextLayer(index: number) {
@@ -631,6 +641,7 @@ export default function App() {
   useEffect(() => {
     if (!session) {
       setQuestionMemory([])
+      setQuestionLimitReached(false)
       return
     }
     authHeaders().then(async headers => {
@@ -650,6 +661,19 @@ export default function App() {
         setQuestionMemory([])
       }
     })
+  }, [session])
+
+  useEffect(() => {
+    if (!session) return
+    let live = true
+    authHeaders().then(async headers => {
+      try {
+        const response = await fetch(`${API}/question-access`, { headers })
+        const data = response.ok ? await response.json() : { paused: false }
+        if (live) setQuestionLimitReached(Boolean(data.paused))
+      } catch { /* the backend remains the source of truth when a search starts */ }
+    })
+    return () => { live = false }
   }, [session])
 
   useEffect(() => {
@@ -1683,6 +1707,15 @@ export default function App() {
               </section>
             )}
             <div className="mt-6 rounded-2xl border border-[#242a33] bg-[#14171c] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
+              {questionLimitReached && (
+                <div className="mb-4 rounded-xl border border-[#ff4500]/50 bg-[#ff4500]/10 px-4 py-3">
+                  <p className="text-sm font-semibold text-[#e8eaed]">You’ve explored your 25 searches.</p>
+                  <p className="mt-1 text-sm text-[#9aa4b2]">Your access is paused here so we can keep GoHook useful for everyone.</p>
+                  <button type="button" onClick={requestMoreQuestionSearches} disabled={questionLimitRequested} className="mt-3 rounded-lg border border-[#ff4500] px-3 py-2 text-sm font-semibold text-[#ff6a33] disabled:opacity-60">
+                    {questionLimitRequested ? 'Request sent' : 'Get more searches'}
+                  </button>
+                </div>
+              )}
               <textarea
                 value={questionBrief}
                 onChange={e => setQuestionBrief(e.target.value)}
@@ -1693,7 +1726,7 @@ export default function App() {
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={createQuestionBatch}
-                  disabled={!questionBrief.trim()}
+                  disabled={!questionBrief.trim() || questionLimitReached}
                   className="w-full sm:w-auto min-h-12 bg-[#ff4500] hover:bg-[#ff6a33] text-white px-6 py-3 rounded-xl text-sm font-semibold shadow-[0_8px_20px_rgba(255,69,0,0.22)] disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
                 >
                     {questionBrief.split('\n').map(question => question.trim()).filter(Boolean).length === 1 ? 'Start question' : 'Create question batch'}
