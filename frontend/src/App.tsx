@@ -1140,7 +1140,7 @@ export default function App() {
     }
   }
 
-  async function findRelevantThreads() {
+  async function findRelevantThreads(freshness = threadFreshness) {
     if (!postPreview.trim()) return
     setFindingThreads(true)
     setCommentError('')
@@ -1148,7 +1148,7 @@ export default function App() {
       const res = await fetch(`${API}/relevant-threads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: postPreview, source_url: postUrl, freshness: threadFreshness }),
+        body: JSON.stringify({ topic: postPreview, source_url: postUrl, freshness }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Could not find relevant threads')
@@ -2332,7 +2332,7 @@ export default function App() {
                   </button>
                   {postFetched && (
                     <button
-                      onClick={findRelevantThreads}
+                      onClick={() => findRelevantThreads()}
                       disabled={findingThreads}
                       className="border border-[#3a4250] text-[#e8eaed] hover:border-[#ff4500]/60 hover:text-[#ff6a33] px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
                     >
@@ -2342,7 +2342,11 @@ export default function App() {
                   {postFetched && (
                     <select
                       value={threadFreshness}
-                      onChange={e => setThreadFreshness(e.target.value as 'week' | 'month')}
+                      onChange={e => {
+                        const value = e.target.value as 'week' | 'month'
+                        setThreadFreshness(value)
+                        if (relevantThreads.length > 0) findRelevantThreads(value)
+                      }}
                       className="bg-[#0f1216] border border-[#3a4250] text-[#e8eaed] rounded-lg px-2 py-1.5 text-xs"
                     >
                       <option value="week">Past week</option>
