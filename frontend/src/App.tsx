@@ -882,6 +882,7 @@ export default function App() {
   const [findingThreads, setFindingThreads] = useState(false)
   const [relevantThreads, setRelevantThreads] = useState<{ title: string; url: string; subreddit: string; snippet: string }[]>([])
   const [threadFallback, setThreadFallback] = useState(false)
+  const [threadFreshness, setThreadFreshness] = useState<'week' | 'month'>('week')
 
   // Auto-search from URL param: ?q=Notion
   useEffect(() => {
@@ -1147,7 +1148,7 @@ export default function App() {
       const res = await fetch(`${API}/relevant-threads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: postPreview, source_url: postUrl }),
+        body: JSON.stringify({ topic: postPreview, source_url: postUrl, freshness: threadFreshness }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Could not find relevant threads')
@@ -2337,6 +2338,16 @@ export default function App() {
                     >
                       {findingThreads ? 'Finding threads…' : 'Find relevant threads →'}
                     </button>
+                  )}
+                  {postFetched && (
+                    <select
+                      value={threadFreshness}
+                      onChange={e => setThreadFreshness(e.target.value as 'week' | 'month')}
+                      className="bg-[#0f1216] border border-[#3a4250] text-[#e8eaed] rounded-lg px-2 py-1.5 text-xs"
+                    >
+                      <option value="week">Past week</option>
+                      <option value="month">Past month</option>
+                    </select>
                   )}
                   {postFetched && <span className="text-xs text-emerald-400">URL verified. Ready to draft.</span>}
                 </div>

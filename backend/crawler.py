@@ -105,7 +105,7 @@ async def crawl_reddit(query: str, subreddits: list[str], expand: bool = False, 
     return all_posts
 
 
-async def search_web(query: str, limit: int = 6, reddit_only: bool = False) -> list[dict]:
+async def search_web(query: str, limit: int = 6, reddit_only: bool = False, freshness: str = "any") -> list[dict]:
     """
     Plain web search — no "reddit" added, no Reddit-only filter.
     Used to answer factual questions from sources instead of memory.
@@ -114,11 +114,15 @@ async def search_web(query: str, limit: int = 6, reddit_only: bool = False) -> l
     if not SERPER_API_KEY:
         raise ValueError("SERPER_API_KEY not set in .env")
 
+    # reddit_only keeps every result on Reddit, for the Questions page.
+    payload = {"q": f"{query} site:reddit.com" if reddit_only else query, "num": limit}
+    if freshness in {"week", "month"}:
+        payload["tbs"] = f"qdr:{freshness[0]}"
+
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             SERPER_URL,
-            # reddit_only keeps every result on Reddit, for the Questions page.
-            json={"q": f"{query} site:reddit.com" if reddit_only else query, "num": limit},
+            json=payload,
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             timeout=15,
         )

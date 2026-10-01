@@ -1198,6 +1198,7 @@ class RedditPostRequest(BaseModel):
 class RelevantThreadsRequest(BaseModel):
     topic: str
     source_url: Optional[str] = None
+    freshness: str = "week"  # week or month
 
 
 def clean_preview_text(text: str) -> str:
@@ -1398,7 +1399,7 @@ async def relevant_threads(req: RelevantThreadsRequest):
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="A topic is required")
     try:
-        results = await search_web(f"{req.topic[:300]} discussion", limit=8, reddit_only=True)
+        results = await search_web(f"{req.topic[:300]} discussion", limit=8, reddit_only=True, freshness=req.freshness)
         source = (req.source_url or "").split("?", 1)[0].rstrip("/").lower()
         seen_titles: set[str] = set()
         seen_ids: set[str] = set()
