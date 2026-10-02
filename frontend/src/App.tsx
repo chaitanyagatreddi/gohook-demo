@@ -909,7 +909,7 @@ export default function App() {
   }, [session])
 
   const COMPARISON_PATTERN = /\bvs\.?\b|\bversus\b/i
-  const FREE_SEARCH_LIMIT = 3
+  const FREE_SEARCH_LIMIT = 5
   const [searchCount, setSearchCount] = useState(() => {
     const raw = localStorage.getItem('redditscan_search_count')
     return raw ? parseInt(raw, 10) || 0 : 0
