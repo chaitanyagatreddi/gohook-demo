@@ -9,10 +9,11 @@ type SignInCardProps = {
     sendMagicLink: () => void
     session: boolean
     onDone: () => void
+    onSkip?: () => void
 }
 
 /** The signed-out screen: sign in with an email link or with Google. */
-const OnboardingDeck = ({ authEmail, setAuthEmail, authSent, authError, sendMagicLink, session, onDone }: SignInCardProps) => {
+const OnboardingDeck = ({ authEmail, setAuthEmail, authSent, authError, sendMagicLink, session, onDone, onSkip }: SignInCardProps) => {
     const [oauthPending, setOauthPending] = useState(false)
 
     async function signInWithGoogle() {
@@ -83,6 +84,7 @@ const OnboardingDeck = ({ authEmail, setAuthEmail, authSent, authError, sendMagi
                 )}
 
                 {authError && <p className="mt-3 text-xs text-[#ff8a66]">{authError}</p>}
+                {onSkip && !session && <button type="button" onClick={onSkip} className="mt-5 block text-sm text-[#9aa4b2] hover:text-[#e8eaed]">Skip for now</button>}
                 {session && <button type="button" onClick={onDone} className="mt-5 text-sm text-[#ff6a33] hover:underline">Continue</button>}
             </div>
         </div>

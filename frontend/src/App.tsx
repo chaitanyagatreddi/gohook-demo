@@ -530,6 +530,7 @@ export default function App() {
 
   // Auth + Zernio connection state
   const [session, setSession] = useState<Session | null>(null)
+  const [sessionChecked, setSessionChecked] = useState(false)
 
   // Whatever is already on the Board was saved before the graph knew about it.
   // Push those across once, after sign-in, then never again on this device.
@@ -619,7 +620,7 @@ export default function App() {
   const [zernioError, setZernioError] = useState('')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setSessionChecked(true) })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
     return () => listener.subscription.unsubscribe()
   }, [])
@@ -627,6 +628,20 @@ export default function App() {
   useEffect(() => {
     if (session) setShowAuthGate(false)
   }, [session])
+
+  // First visit, signed out: show the sign-in / onboarding screen once.
+  useEffect(() => {
+    if (!sessionChecked) return
+    try {
+      if (session) { localStorage.setItem('gohook_seen_onboarding', '1'); return }
+      if (!localStorage.getItem('gohook_seen_onboarding')) setShowAuthGate(true)
+    } catch { /* storage blocked: skip the first-visit screen */ }
+  }, [sessionChecked, session])
+
+  function skipOnboarding() {
+    try { localStorage.setItem('gohook_seen_onboarding', '1') } catch { /* storage blocked */ }
+    setShowAuthGate(false)
+  }
 
   const [needsProfile, setNeedsProfile] = useState(false)
   useEffect(() => {
@@ -1374,6 +1389,7 @@ export default function App() {
             sendMagicLink={sendMagicLink}
             session={!!session}
             onDone={() => setShowAuthGate(false)}
+            onSkip={skipOnboarding}
           />
         </div>
       ) : view === 'ideate' ? (
