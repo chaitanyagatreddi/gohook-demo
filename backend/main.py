@@ -1937,6 +1937,56 @@ async def gsc_run(req: GscRunRequest, user_id: str = Depends(require_user)):
     return result
 
 
+@app.get("/gsc/runs")
+async def gsc_runs(user_id: str = Depends(require_user)):
+    """The person's latest saved runs, newest first."""
+    return {"runs": await gsc_google.list_runs(user_id)}
+
+
+@app.get("/gsc/run/{run_id}")
+async def gsc_run_view(run_id: str, user_id: str = Depends(require_user)):
+    """One saved run for the results screen. Locked rows are never included."""
+    try:
+        import gsc_run_score
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Search Console analysis is not available on this server yet.")
+    saved = await gsc_google.read_run(user_id, run_id)
+    if not saved:
+        raise HTTPException(status_code=404, detail="That run was not found.")
+    return gsc_run_score.build_view(saved["run"], saved["rows"])
+
+
+class GscCsvRunRequest(BaseModel):
+    content: str
+    brand_name: str
+
+
+@app.post("/gsc/run-from-csv")
+async def gsc_run_from_csv(req: GscCsvRunRequest, user_id: str = Depends(require_user)):
+    """The same saved run, made from an uploaded Queries.csv (top 100 rows by clicks)."""
+    if len(req.content) > 2_000_000:
+        raise HTTPException(status_code=413, detail="That file is too large. Upload Queries.csv.")
+    brand = req.brand_name.strip()
+    if not brand:
+        raise HTTPException(status_code=400, detail="Type your brand name first.")
+    try:
+        import gsc_run_score
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Search Console analysis is not available on this server yet.")
+    try:
+        gsc_run_score.brand_regex(brand)
+        parsed = await run_in_threadpool(parse_gsc, req.content)
+        if parsed["key_kind"] != "query":
+            raise ValueError("That file lists pages, not queries. Upload Queries.csv.")
+        pull = gsc_run_score.pull_from_parsed(parsed, time.strftime("%Y-%m-%d", time.gmtime()))
+    except ValueError as exc:
+        # These messages are written for the person who uploaded the file.
+        raise HTTPException(status_code=400, detail=str(exc))
+    analysis = await run_in_threadpool(gsc_run_score.analyse, pull["rows"], brand)
+    run_id = await gsc_google.save_run(user_id, pull, analysis, brand)
+    return {"run_id": run_id, "row_count": pull["row_count"], "brand_regex": analysis["brand_regex"]}
+
+
 @app.post("/gsc/import")
 async def gsc_import(req: GscImportRequest, user_id: str = Depends(require_user)):
     """Parse an uploaded Search Console CSV and store it."""

@@ -6,6 +6,7 @@ import AdminUsage from './AdminUsage'
 import Audit from './Audit'
 import SlackSetup from './SlackSetup'
 import SearchConsoleSetup from './SearchConsoleSetup'
+import SearchQueryLab from './SearchQueryLab'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase, authHeaders } from './supabaseClient'
@@ -163,12 +164,17 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   // View + Kanban board
-  const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'reply' | 'graph' | 'settings' | 'usage' | 'audit'>(() => {
+  const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'reply' | 'graph' | 'settings' | 'usage' | 'audit' | 'search'>(() => {
     // Coming back from signing into Reddit: land on the Graph page.
     try {
       const params = new URLSearchParams(window.location.search)
       // Coming back from Google Search Console: land on Settings, where the result shows.
-      if (params.get('gsc')) return 'settings'
+      if (params.get('gsc')) {
+        // The Search page remembers it started the connect, so the person lands back there.
+        let back = 'settings'
+        try { back = sessionStorage.getItem('gohook_gsc_return') === 'search' ? 'search' : 'settings'; sessionStorage.removeItem('gohook_gsc_return') } catch { /* storage blocked */ }
+        return back === 'search' ? 'search' : 'settings'
+      }
       return params.get('reddit') === 'connected' ? 'graph' : 'audit'
     } catch {
       return 'audit'
@@ -1339,6 +1345,7 @@ export default function App() {
               { key: 'ideate', label: 'Ideate', icon: <><path d="M7 17L17 7" /><path d="M8 7h9v9" /></> },
               { key: 'reply', label: 'Reply to Threads', icon: <><path d="M9 14l-4-4 4-4" /><path d="M5 10h9a5 5 0 0 1 5 5v3" /></> },
               { key: 'questions', label: 'Research', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></> },
+              { key: 'search', label: 'Search', icon: <><circle cx="10" cy="10" r="6" /><path d="M21 21l-6-6" /><path d="M7.5 10h5" /></> },
               { key: 'graph', label: 'Graph', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="12" cy="17" r="2.5" /><path d="M8 7.5l8 -0.5M7.2 8.2L11 14.8M16.8 9.2L13 14.8" /></> },
               { key: 'usage', label: 'Usage', owner: true, icon: <><path d="M4 19V10" /><path d="M10 19V5" /><path d="M16 19v-6" /><path d="M21 19H3" /></> },
               { key: 'settings', label: 'Settings', icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></> },
@@ -1684,6 +1691,7 @@ export default function App() {
         {view === 'board' && <Board board={board} setBoard={setBoard} onGoToResults={() => setView('results')} />}
 
         {view === 'audit' && <Audit api={API} />}
+        {view === 'search' && <SearchQueryLab api={API} signedIn={!!session} />}
 
         {view === 'usage' && (
           <div>

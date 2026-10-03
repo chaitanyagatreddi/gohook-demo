@@ -7,7 +7,8 @@ and behaviour differ. The method is copied from the LegacyLeap workbook, tabs
 20_Regex_Patterns and 21_Regex_Opportunities. Extra-click numbers are
 ESTIMATES, not forecasts.
 """
-import re  # only to split a brand name into words; never used on queries
+import datetime as dt
+import re  # only to split a brand name into words and parse timestamps; never used on queries
 
 import re2
 
@@ -236,3 +237,103 @@ def analyse(rows: list, brand_name: str) -> dict:
     result = score_rows(rows, brand_name)
     result["groups"] = group_table(result["rows"])
     return result
+
+
+# --- the weekly gate, and the shape the results screen reads ---------------------
+
+WEEKS = 4
+ROWS_PER_WEEK = 25
+CSV_SITE = "csv-upload"   # site_url stored for a run made from an uploaded Queries.csv
+
+
+def _parse_ts(value: str) -> dt.datetime:
+    """Postgres timestamps may carry 5 or 6 fractional digits; Python 3.9 wants 6."""
+    value = value.replace("Z", "+00:00")
+    value = re.sub(r"(\.\d+)", lambda m: (m.group(1) + "000000")[:7], value, count=1)
+    parsed = dt.datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
+
+
+def week_info(row_count: int, created_at: str, now=None) -> dict:
+    """
+    Week 1 shows rows 1-25, week 2 rows 1-50, week 3 rows 1-75, week 4 all 100.
+    Worked out from the stored run date; no Google call is ever made for it.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    weeks_since = max(0, int((now - _parse_ts(created_at)).total_seconds() // (7 * 86400)))
+    return {
+        "week": min(weeks_since + 1, WEEKS),
+        "of": WEEKS,
+        "visible_rows": min(row_count, ROWS_PER_WEEK * (weeks_since + 1)),
+        "row_count": row_count,
+    }
+
+
+def build_view(run: dict, rows: list, now=None) -> dict:
+    """
+    What the results screen reads. The group table counts all stored rows
+    (numbers only); the opportunity list holds only unlocked rows, so a locked
+    row can never leave the server.
+    """
+    week = week_info(run["row_count"], run["created_at"], now)
+    details = {g["name"]: g for g in universal_groups(run["brand_regex"])}
+    unlocked = [r for r in rows if r["rank"] <= week["visible_rows"]]
+    # Counts cover every stored row (numbers only). The "top opportunities" in a
+    # group name actual queries, so they come from unlocked rows only.
+    top_from_unlocked = {g["group"]: g["top_opportunities"] for g in group_table(unlocked)}
+    groups = []
+    for g in group_table(rows):
+        d = details[g["group"]]
+        groups.append(dict(
+            g,
+            top_opportunities=top_from_unlocked[g["group"]],
+            pattern=d["pattern"],
+            filter_type="Doesn't match regex" if d["mode"] == "not-match" else "Matches regex",
+            finds=d["finds"],
+        ))
+
+    visible = [
+        r for r in rows
+        if r["rank"] <= week["visible_rows"]
+        and not r["is_brand"] and not r["geo_flag"]
+        and (r["est_extra_clicks"] is None or r["est_extra_clicks"] > 0)
+    ]
+    visible.sort(key=lambda r: (r["est_extra_clicks"] is None, -(r["est_extra_clicks"] or 0)))
+    opportunities = [
+        {k: r.get(k) for k in (
+            "rank", "query", "page", "position", "clicks", "impressions", "est_extra_clicks",
+            "low_data", "action", "groups", "bucket", "target_bucket",
+        )}
+        for r in visible
+    ]
+    return {
+        "run": {k: run.get(k) for k in (
+            "id", "site_url", "start_date", "end_date", "brand_name", "brand_regex", "created_at", "row_count",
+        )},
+        "from_csv": run.get("site_url") == CSV_SITE,
+        "week": week,
+        "benchmark": run.get("benchmark"),
+        "groups": groups,
+        "opportunities": opportunities,
+    }
+
+
+def pull_from_parsed(parsed: dict, today: str) -> dict:
+    """
+    Make a run-shaped pull from a parsed Queries.csv (search_console.parse_gsc):
+    the top 100 rows by clicks, no page column. Rows without impressions or a
+    position cannot be scored, so they are dropped.
+    """
+    usable = [
+        r for r in parsed["rows"]
+        if r.get("impressions") is not None and r.get("position") is not None
+    ]
+    if not usable:
+        raise ValueError("That file has no rows with impressions and position, so it cannot be scored.")
+    usable.sort(key=lambda r: r.get("clicks") or 0, reverse=True)
+    rows = [
+        {"rank": i, "query": r["key"], "page": "", "clicks": r.get("clicks") or 0,
+         "impressions": r["impressions"], "ctr": r.get("ctr"), "position": r["position"]}
+        for i, r in enumerate(usable[:100], start=1)
+    ]
+    return {"site_url": CSV_SITE, "start_date": today, "end_date": today, "row_count": len(rows), "rows": rows}

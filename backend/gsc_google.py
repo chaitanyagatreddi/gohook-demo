@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from typing import Optional
 from urllib.parse import quote, urlencode
@@ -412,3 +413,46 @@ async def save_run(user_id: str, pull: dict, analysis: Optional[dict] = None, br
             )
             raise
     return run_id
+
+
+_UUID = re.compile(r"^[0-9a-fA-F-]{36}$")
+
+
+async def list_runs(user_id: str) -> list:
+    """The person's latest runs, newest first. Never includes rows."""
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/gsc_runs",
+            headers=_headers(),
+            params={"user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "10",
+                    "select": "id,site_url,brand_name,row_count,created_at"},
+            timeout=30,
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+async def read_run(user_id: str, run_id: str) -> Optional[dict]:
+    """One run and all its stored rows, or None if it is not this person's."""
+    if not _UUID.match(run_id or ""):
+        return None
+    async with httpx.AsyncClient() as client:
+        run_res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/gsc_runs",
+            headers=_headers(),
+            params={"id": f"eq.{run_id}", "user_id": f"eq.{user_id}", "select": "*"},
+            timeout=30,
+        )
+        run_res.raise_for_status()
+        runs = run_res.json()
+        if not runs:
+            return None
+        rows_res = await client.get(
+            f"{SUPABASE_URL}/rest/v1/gsc_run_rows",
+            headers=_headers(),
+            params={"run_id": f"eq.{run_id}", "user_id": f"eq.{user_id}", "order": "rank.asc",
+                    "limit": "100", "select": "*"},
+            timeout=30,
+        )
+        rows_res.raise_for_status()
+        return {"run": runs[0], "rows": rows_res.json()}
