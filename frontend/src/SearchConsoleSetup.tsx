@@ -96,9 +96,9 @@ export default function SearchConsoleSetup({ api, signedIn }: { api: string; sig
             tap: { scale: 0.97, backgroundColor: '#cc3700' },
           }}
           transition={{ type: 'spring', bounce: 0.28, duration: 0.42 }}
-          className="mt-4 inline-flex items-center gap-2 rounded-lg px-[18px] py-[10px] text-sm font-medium text-white disabled:opacity-40"
+          className="mt-4 inline-flex items-center gap-2 rounded-lg px-[18px] py-[10px] text-sm leading-[18px] font-medium text-white disabled:opacity-40"
         >
-          {busy ? 'Opening Google…' : state === 'needs_reconnect' ? 'Reconnect Google' : 'Connect Google Search Console'}
+          {busy ? 'Opening Google…' : state === 'needs_reconnect' ? 'Reconnect' : 'Search Console'}
           <motion.span variants={{ rest: { x: 0 }, hover: { x: 4 } }} transition={{ type: 'spring', bounce: 0.28, duration: 0.42 }}>→</motion.span>
         </motion.button>
       )}
