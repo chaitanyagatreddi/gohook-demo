@@ -268,7 +268,6 @@ export default function SearchQueryLab({ api, signedIn }: { api: string; signedI
                 {connection === 'ok' ? '✓ Connected' : connection === 'needs_reconnect' ? 'Needs reconnect' : connection === 'checking' ? 'Checking…' : 'Not connected'}
               </span>
             </div>
-            <p className="mt-2 text-sm text-[#9aa4b2]">Test version: Google will show a warning screen, and you will need to reconnect after 7 days to run again.</p>
             {connection !== 'ok' && connection !== 'checking' && (
               <div className="mt-3"><OrangeButton onClick={connect}>{connection === 'needs_reconnect' ? 'Reconnect' : 'Search Console'}</OrangeButton></div>
             )}
