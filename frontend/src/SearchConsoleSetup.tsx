@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { motion } from 'motion/react'
 import { authHeaders } from './supabaseClient'
 
 type Site = { url: string; permission: string }
@@ -82,13 +83,24 @@ export default function SearchConsoleSetup({ api, signedIn }: { api: string; sig
           </ul>
         </div>
       ) : (
-        <button
+        <motion.button
           onClick={connect}
           disabled={busy || state === 'checking'}
-          className="mt-3 bg-[#ff4500] hover:bg-[#ff6a33] text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
+          initial="rest"
+          animate="rest"
+          whileHover="hover"
+          whileTap="tap"
+          variants={{
+            rest: { y: 0, scale: 1, backgroundColor: '#ff4500' },
+            hover: { y: -2, backgroundColor: '#ff6a2b' },
+            tap: { scale: 0.97, backgroundColor: '#cc3700' },
+          }}
+          transition={{ type: 'spring', bounce: 0.28, duration: 0.42 }}
+          className="mt-4 inline-flex items-center gap-2 rounded-lg px-[18px] py-[10px] text-sm font-medium text-white disabled:opacity-40"
         >
           {busy ? 'Opening Google…' : state === 'needs_reconnect' ? 'Reconnect Google' : 'Connect Google Search Console'}
-        </button>
+          <motion.span variants={{ rest: { x: 0 }, hover: { x: 4 } }} transition={{ type: 'spring', bounce: 0.28, duration: 0.42 }}>→</motion.span>
+        </motion.button>
       )}
       {message && <p className="mt-2 text-xs text-green-400">{message}</p>}
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
