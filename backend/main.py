@@ -1,6 +1,6 @@
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
@@ -9,7 +9,7 @@ from extractors import extract_intel
 from generator import generate_post_angles, draft_post_from_angle, draft_post, draft_comment, generate_question_answer, generate_question_follow_up, expand_short_question, plan_queries, answer_from_threads, validate_question_answer, evaluate_question_sources, question_evidence_bar, analyze_voice, VOICE_MIN_WORDS
 from graph import ingest_threads, link_user_to_threads, link_user_to_subreddits, read_subscribed_subreddits, snapshot_scores, read_graph, read_question_memory, save_question_memory, read_voice_profile, save_voice_profile, delete_voice_profile, record_event, count_events, record_thread_score, read_thread_score_history, read_usage, read_members, save_member, delete_member, save_audit_run, read_audit_runs, read_slack_hook, save_slack_hook, delete_slack_hook, send_to_slack
 from search_console import parse_gsc
-import gsc_patterns, gsc_store
+import gsc_patterns, gsc_store, gsc_google
 from topics import tag_threads
 from audit import run_audit
 import composio_reddit
@@ -1820,6 +1820,121 @@ class GscPatternRequest(BaseModel):
     name: str
     pattern: str
     intent_class: str = "question"
+
+
+# Google Search Console connect (read-only). The callback address below must be
+# listed under "Authorised redirect URIs" on the Google OAuth client.
+GSC_REDIRECT_URI = os.getenv("GSC_REDIRECT_URI", "https://backend-ecru-delta-15.vercel.app/gsc/callback")
+GSC_RETURN_URL = os.getenv("GSC_RETURN_URL", "https://app.gohook.dev")
+
+
+@app.post("/gsc/connect")
+async def gsc_connect(user_id: str = Depends(require_user)):
+    """Hand back the Google consent URL for this person to open."""
+    if not gsc_google.configured():
+        raise HTTPException(status_code=503, detail="Search Console connecting is not set up yet.")
+    return {"url": gsc_google.auth_url(GSC_REDIRECT_URI, user_id)}
+
+
+@app.get("/gsc/callback")
+async def gsc_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+    """Google sends the person back here. Save the encrypted token, then return them to the app."""
+    from urllib.parse import urlencode
+
+    def back(status: str, message: str = ""):
+        query = {"gsc": status}
+        if message:
+            query["message"] = message
+        return RedirectResponse(f"{GSC_RETURN_URL}/?{urlencode(query)}")
+
+    if error:
+        return back("error", "Search Console access was not approved.")
+    try:
+        user_id = gsc_google.check_state(state or "")
+        tokens = await run_in_threadpool(gsc_google.exchange_code, code or "", GSC_REDIRECT_URI)
+        await gsc_google.save_connection(user_id, tokens["refresh_token"], tokens["scope"])
+    except gsc_google.OAuthError as exc:
+        # These messages are written for the person connecting.
+        return back("error", str(exc))
+    except Exception:
+        logger.exception("Could not finish the Search Console connection")
+        return back("error", "Could not finish connecting Search Console. Please try again.")
+    return back("connected")
+
+
+@app.get("/gsc/status")
+async def gsc_status(user_id: str = Depends(require_user)):
+    saved = await gsc_google.read_status(user_id)
+    if not saved:
+        return {"connected": False, "state": "not_connected"}
+    return {"connected": saved["status"] == "ok", "state": saved["status"], "consented_at": saved.get("consented_at")}
+
+
+@app.get("/gsc/sites")
+async def gsc_sites(user_id: str = Depends(require_user)):
+    """The Search Console properties this person can read. Also proves the token works."""
+    try:
+        refresh = await gsc_google.load_refresh_token(user_id)
+        token = await run_in_threadpool(gsc_google.access_token, refresh)
+        return {"sites": await run_in_threadpool(gsc_google.list_sites, token)}
+    except gsc_google.ReconnectNeeded as exc:
+        await gsc_google.mark_needs_reconnect(user_id)
+        raise HTTPException(status_code=409, detail=str(exc))
+    except gsc_google.OAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+class GscRunRequest(BaseModel):
+    site_url: str
+    brand_name: str
+
+
+@app.post("/gsc/run")
+async def gsc_run(req: GscRunRequest, user_id: str = Depends(require_user)):
+    """
+    One Search Console pull for one site: query + page, top 100 rows by clicks,
+    last 3 months, grouped with the universal regex groups and scored with the
+    workbook method (ESTIMATES). Saved and never re-pulled, so a later week can
+    be served from the stored rows without calling Google.
+    """
+    site = req.site_url.strip()
+    if not site:
+        raise HTTPException(status_code=400, detail="Pick a site first.")
+    brand = req.brand_name.strip()
+    if not brand:
+        raise HTTPException(status_code=400, detail="Type your brand name first.")
+    try:
+        import gsc_run_score  # RE2 (google-re2); imported here so a missing library cannot take the whole API down
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Search Console analysis is not available on this server yet.")
+    try:
+        gsc_run_score.brand_regex(brand)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="That brand name could not be used. Try the name as it appears on your site.")
+    try:
+        refresh = await gsc_google.load_refresh_token(user_id)
+        token = await run_in_threadpool(gsc_google.access_token, refresh)
+        pull = await run_in_threadpool(gsc_google.query_top_rows, token, site)
+    except gsc_google.ReconnectNeeded as exc:
+        await gsc_google.mark_needs_reconnect(user_id)
+        raise HTTPException(status_code=409, detail=str(exc))
+    except gsc_google.OAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    analysis = await run_in_threadpool(gsc_run_score.analyse, pull["rows"], brand)
+    run_id = await gsc_google.save_run(user_id, pull, analysis, brand)
+    result = {
+        "run_id": run_id,
+        "site_url": pull["site_url"],
+        "start_date": pull["start_date"],
+        "end_date": pull["end_date"],
+        "row_count": pull["row_count"],
+        "brand_regex": analysis["brand_regex"],
+        "groups": analysis["groups"],
+    }
+    if pull["row_count"] == 0:
+        result["message"] = "No search data for this period yet."
+    return result
 
 
 @app.post("/gsc/import")

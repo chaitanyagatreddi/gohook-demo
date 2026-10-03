@@ -5,6 +5,7 @@ import VoiceSetup from './VoiceSetup'
 import AdminUsage from './AdminUsage'
 import Audit from './Audit'
 import SlackSetup from './SlackSetup'
+import SearchConsoleSetup from './SearchConsoleSetup'
 import Graph from './Graph'
 import IdeateWireframe from './IdeateWireframe'
 import { supabase, authHeaders } from './supabaseClient'
@@ -165,7 +166,10 @@ export default function App() {
   const [view, setView] = useState<'results' | 'questions' | 'board' | 'ideate' | 'reply' | 'graph' | 'settings' | 'usage' | 'audit'>(() => {
     // Coming back from signing into Reddit: land on the Graph page.
     try {
-      return new URLSearchParams(window.location.search).get('reddit') === 'connected' ? 'graph' : 'audit'
+      const params = new URLSearchParams(window.location.search)
+      // Coming back from Google Search Console: land on Settings, where the result shows.
+      if (params.get('gsc')) return 'settings'
+      return params.get('reddit') === 'connected' ? 'graph' : 'audit'
     } catch {
       return 'audit'
     }
@@ -1953,6 +1957,9 @@ export default function App() {
             />
             <h2 className="mt-8 text-lg font-semibold text-[#e8eaed] mb-4">Alerts</h2>
             <SlackSetup api={API} signedIn={!!session} />
+
+            <h2 className="mt-8 text-lg font-semibold text-[#e8eaed] mb-4">Search Console</h2>
+            <SearchConsoleSetup api={API} signedIn={!!session} />
 
             <h2 className="mt-8 text-lg font-semibold text-[#e8eaed] mb-4">API Keys</h2>
             <div className="border border-[#242a33] bg-[#14171c] rounded-xl p-4">
